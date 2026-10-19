@@ -21,6 +21,10 @@ export default defineConfig(({ mode }) => {
       'process.env.SUPABASE_JWKS_URL': JSON.stringify(env.SUPABASE_JWKS_URL || 'https://hriyiiuxlnzpbzgucbga.supabase.co/auth/v1/.well-known/jwks.json'),
       'process.env': {}
     },
+    server: {
+      port: 5173,
+      host: true
+    },
     build: {
       outDir: 'dist',
     }
