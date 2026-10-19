@@ -474,3 +474,27 @@ export interface AuditLog {
   metadata?: Record<string, any>;
 }
 
+export type JarvisPresetId =
+  | 'arc-cyan'
+  | 'mark-crimson'
+  | 'friday-emerald'
+  | 'veronica-violet'
+  | 'solar-amber'
+  | 'stealth-chrome'
+  | 'custom';
+
+export interface JarvisThemeConfig {
+  presetId: JarvisPresetId;
+  name: string;
+  tagline: string;
+  primaryAccent: string;
+  secondaryAccent: string;
+  bgDark: string;
+  glassBlur: 'subtle' | 'liquid' | 'deep';
+  glowIntensity: 'subtle' | 'medium' | 'high';
+  glassOpacity: number;
+  ambientOrbs: boolean;
+  audioFeedback: boolean;
+  scanlineEffect: boolean;
+  hudBorders: boolean;
+}
