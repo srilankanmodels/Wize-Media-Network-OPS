@@ -16,16 +16,30 @@ import Procedures from './components/Procedures';
 import MonthlyCalendar from './components/MonthlyCalendar';
 import AccessManagement from './components/AccessManagement';
 import WorkloadDashboard from './components/WorkloadDashboard';
+import PendingApprovalScreen from './components/PendingApprovalScreen';
+import RejectedAccessScreen from './components/RejectedAccessScreen';
+import SuspendedAccessScreen from './components/SuspendedAccessScreen';
+import AccessDeniedScreen from './components/AccessDeniedScreen';
 import Footer from './components/Footer';
 import FloatingAI from './components/FloatingAI';
 import { db, isFirebaseEnabled } from './firebase';
+import { 
+  supabase, 
+  isSupabaseEnabled, 
+  syncToSupabase, 
+  deleteFromSupabase, 
+  recordAuditLog, 
+  loadAuditLogs, 
+  syncAllAppDataToSupabase, 
+  loadAllAppDataFromSupabase,
+  loadAllAccessRequests,
+  createOrGetAccessRequest
+} from './supabase';
+import { canAccessModule, hasPermission } from './utils/permissions';
+import { AuditLog, EmployeeAccessRequest } from './types';
 import { doc, setDoc, onSnapshot, collection, updateDoc, addDoc, query, orderBy, limit, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
-import { LogOut, Users, FileText, Hexagon, Building2, Bell, Clock, DollarSign, UserCircle, MessageSquare, ListTodo, X, Building, Zap, Target, CheckCircle2, Plus, Calendar, Timer, AlertCircle, Archive, LayoutGrid, Heart, ChevronRight, ChevronLeft, Search, Check, Trash2, StickyNote, Send, Link as LinkIcon, Bookmark, Briefcase, ChevronDown, CloudOff, Cloud, RefreshCw, Database, ServerCrash, ShieldCheck, HardDrive, Cpu, Bot, CheckCircle, Compass, Circle, Menu, ArrowRight, Layers, Radio, RadioTower, Video, Mic, Globe, ShieldAlert, Lock, BarChart2, Sliders, Sparkles, Sun, Flame } from 'lucide-react';
+import { LogOut, Users, FileText, Hexagon, Building2, Bell, Clock, DollarSign, UserCircle, MessageSquare, ListTodo, X, Building, Zap, Target, CheckCircle2, Plus, Calendar, Timer, AlertCircle, Archive, LayoutGrid, Heart, ChevronRight, ChevronLeft, Search, Check, Trash2, StickyNote, Send, Link as LinkIcon, Bookmark, Briefcase, ChevronDown, CloudOff, Cloud, RefreshCw, Database, ServerCrash, ShieldCheck, HardDrive, Cpu, Bot, CheckCircle, Compass, Circle, Menu, ArrowRight, Layers, Radio, RadioTower, Video, Mic, Globe, ShieldAlert, Lock, BarChart2, Loader2 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
-import { JarvisThemeConfig } from './types';
-import { loadSavedJarvisTheme, saveJarvisTheme, applyJarvisThemeToDOM } from './utils/jarvisTheme';
-import { playJarvisSound } from './utils/jarvisAudio';
-import JARVISSettingsModal from './components/JARVISSettingsModal';
 
 type ViewState = 'dashboard' | 'detail' | 'staff' | 'clients' | 'finance' | 'hr' | 'registry' | 'notes' | 'procedures' | 'calendar' | 'access' | 'workload';
 type StorageMode = 'cloud' | 'local';
@@ -39,12 +53,42 @@ const INITIAL_AGENCY_PROFILE: AgencyProfile = {
 };
 
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<StaffMember | null>(null);
-  const [storageMode, setStorageMode] = useState<StorageMode>(isFirebaseEnabled ? 'cloud' : 'local');
+  const [currentUser, setCurrentUser] = useState<StaffMember | null>(() => {
+    try {
+      const saved = localStorage.getItem('mw_session_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const handleSetCurrentUser = useCallback((user: StaffMember | null) => {
+    setCurrentUser(user);
+    if (user) {
+      try {
+        localStorage.setItem('mw_session_user', JSON.stringify(user));
+      } catch (e) {
+        console.debug('Session storage error:', e);
+      }
+    } else {
+      localStorage.removeItem('mw_session_user');
+    }
+  }, []);
+
+  const [storageMode, setStorageMode] = useState<StorageMode>((isFirebaseEnabled || isSupabaseEnabled) ? 'cloud' : 'local');
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const loggedInAuditTracked = useRef<string | null>(null);
   
   // App-wide state
   const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
   const [staffList, setStaffList] = useState<StaffMember[]>(INITIAL_STAFF);
+  const [accessRequests, setAccessRequests] = useState<EmployeeAccessRequest[]>([]);
+  const staffListRef = useRef<StaffMember[]>(INITIAL_STAFF);
+
+  useEffect(() => {
+    staffListRef.current = staffList;
+  }, [staffList]);
   const [clientList, setClientList] = useState<Client[]>(INITIAL_CLIENTS);
   const [serviceCatalog, setServiceCatalog] = useState<ServiceItem[]>(SERVICE_CATALOG);
   const [channels, setChannels] = useState<Channel[]>(INITIAL_CHANNELS);
@@ -75,17 +119,6 @@ const App: React.FC = () => {
   const [showNewClientForm, setShowNewClientForm] = useState(false);
   const [isBriefSearchOpen, setIsBriefSearchOpen] = useState(false);
   const [briefSearchQuery, setBriefSearchQuery] = useState('');
-  const [jarvisTheme, setJarvisTheme] = useState<JarvisThemeConfig>(loadSavedJarvisTheme);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-
-  useEffect(() => {
-    applyJarvisThemeToDOM(jarvisTheme);
-  }, [jarvisTheme]);
-
-  const handleSaveTheme = (newConfig: JarvisThemeConfig) => {
-    setJarvisTheme(newConfig);
-    saveJarvisTheme(newConfig);
-  };
 
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const briefDropdownRef = useRef<HTMLDivElement>(null);
@@ -94,32 +127,56 @@ const App: React.FC = () => {
   const loadLocalData = () => {
     const keys = ['projects', 'staff', 'clients', 'todos', 'events', 'notes', 'agency', 'messages', 'channels', 'notifications', 'procedures', 'leaves', 'pettyCash'];
     keys.forEach(key => {
+      try {
         const saved = localStorage.getItem(`mw_${key}`);
         if (saved) {
-            const data = JSON.parse(saved);
-            if (key === 'projects') setProjects(data);
-            if (key === 'staff') setStaffList(data);
-            if (key === 'clients') setClientList(data);
-            if (key === 'todos') setTodos(data);
-            if (key === 'events') setEvents(data);
-            if (key === 'notes') setMeetingNotes((data && data.length > 0) ? data : INITIAL_MEETING_NOTES);
-            if (key === 'agency') {
-              const merged = {
-                ...INITIAL_AGENCY_PROFILE,
-                ...data,
-                address: (!data.address || data.address.includes('Creative Avenue')) ? INITIAL_AGENCY_PROFILE.address : data.address,
-                phone: (!data.phone || data.phone.includes('222 3333')) ? INITIAL_AGENCY_PROFILE.phone : data.phone
-              };
-              setAgencyProfile(merged);
-              saveLocalData('agency', merged);
+          const data = JSON.parse(saved);
+          if (key === 'projects' && Array.isArray(data)) {
+            const safeProjects = data.map((p: any) => ({
+              ...p,
+              tasksCompleted: p.tasksCompleted || {},
+              steps: p.steps || []
+            }));
+            setProjects(safeProjects);
+          }
+          if (key === 'staff') {
+            const mergedStaff = [...INITIAL_STAFF];
+            if (Array.isArray(data)) {
+              data.forEach((savedMember: StaffMember) => {
+                const idx = mergedStaff.findIndex(s => s.id === savedMember.id || s.email.toLowerCase() === savedMember.email.toLowerCase());
+                if (idx > -1) {
+                  mergedStaff[idx] = { ...mergedStaff[idx], ...savedMember };
+                } else {
+                  mergedStaff.push(savedMember);
+                }
+              });
             }
-            if (key === 'messages') setMessages(data);
-            if (key === 'channels') setChannels(data);
-            if (key === 'notifications') setNotifications(data);
-            if (key === 'procedures') setProcedures(data);
-            if (key === 'leaves') setLeaveRequests(data);
-            if (key === 'pettyCash') setPettyCash(data);
+            setStaffList(mergedStaff);
+          }
+          if (key === 'clients') setClientList(data);
+          if (key === 'todos') setTodos(data);
+          if (key === 'events') setEvents(data);
+          if (key === 'notes') setMeetingNotes((data && data.length > 0) ? data : INITIAL_MEETING_NOTES);
+          if (key === 'agency') {
+            const merged = {
+              ...INITIAL_AGENCY_PROFILE,
+              ...data,
+              address: (!data.address || data.address.includes('Creative Avenue')) ? INITIAL_AGENCY_PROFILE.address : data.address,
+              phone: (!data.phone || data.phone.includes('222 3333')) ? INITIAL_AGENCY_PROFILE.phone : data.phone
+            };
+            setAgencyProfile(merged);
+            saveLocalData('agency', merged);
+          }
+          if (key === 'messages') setMessages(data);
+          if (key === 'channels') setChannels(data);
+          if (key === 'notifications') setNotifications(data);
+          if (key === 'procedures') setProcedures(data);
+          if (key === 'leaves') setLeaveRequests(data);
+          if (key === 'pettyCash') setPettyCash(data);
         }
+      } catch (err) {
+        console.warn(`Local data parse warning for mw_${key}:`, err);
+      }
     });
   };
 
@@ -129,7 +186,257 @@ const App: React.FC = () => {
 
   useEffect(() => {
     loadLocalData();
+
+    if (isSupabaseEnabled) {
+      // 1. Fetch Cloud Audit Logs from Supabase
+      loadAuditLogs().then(cloudLogs => {
+        if (cloudLogs && cloudLogs.length > 0) {
+          setAuditLogs(cloudLogs);
+        }
+      }).catch(err => console.debug('Initial audit log fetch:', err));
+
+      // 2. Fetch Entire Cloud Dataset from Supabase app_data
+      loadAllAppDataFromSupabase().then(cloudData => {
+        if (cloudData) {
+          if (cloudData.projects && Array.isArray(cloudData.projects)) {
+            const safeProjects = cloudData.projects.map((p: any) => ({
+              ...p,
+              tasksCompleted: p.tasksCompleted || {},
+              steps: p.steps || []
+            }));
+            setProjects(safeProjects);
+          }
+          if (cloudData.staff) {
+            const mergedStaff = [...INITIAL_STAFF];
+            if (Array.isArray(cloudData.staff)) {
+              cloudData.staff.forEach((savedMember: StaffMember) => {
+                const idx = mergedStaff.findIndex(s => s.id === savedMember.id || s.email.toLowerCase() === savedMember.email.toLowerCase());
+                if (idx > -1) {
+                  mergedStaff[idx] = { ...mergedStaff[idx], ...savedMember };
+                } else {
+                  mergedStaff.push(savedMember);
+                }
+              });
+            }
+            setStaffList(mergedStaff);
+          }
+          if (cloudData.clients) setClientList(cloudData.clients);
+          if (cloudData.todos) setTodos(cloudData.todos);
+          if (cloudData.events) setEvents(cloudData.events);
+          if (cloudData.notes) setMeetingNotes(cloudData.notes);
+          if (cloudData.agency) setAgencyProfile(cloudData.agency);
+          if (cloudData.messages) setMessages(cloudData.messages);
+          if (cloudData.channels) setChannels(cloudData.channels);
+          if (cloudData.notifications) setNotifications(cloudData.notifications);
+          if (cloudData.procedures) setProcedures(cloudData.procedures);
+          if (cloudData.leaves) setLeaveRequests(cloudData.leaves);
+          if (cloudData.pettyCash) setPettyCash(cloudData.pettyCash);
+        }
+      }).catch(err => console.debug('Initial app_data cloud fetch:', err));
+
+      // 3. Setup Employee Access Requests
+      loadAllAccessRequests().then(reqs => {
+        if (reqs && reqs.length > 0) {
+          setAccessRequests(reqs);
+        }
+      }).catch(err => console.debug('Initial access requests fetch:', err));
+
+      // 4. Setup Supabase Session and Real-time Auth
+      if (supabase) {
+        const syncUser = async (user: any) => {
+          if (!user) {
+            // Check if there is an active local demo / staff session before wiping currentUser
+            const savedSession = localStorage.getItem('mw_session_user');
+            if (savedSession) {
+              try {
+                const parsed = JSON.parse(savedSession);
+                if (parsed && !parsed.authUserId) {
+                  // Keep local session active
+                  return;
+                }
+              } catch (e) {}
+            }
+            handleSetCurrentUser(null);
+            return;
+          }
+          const userEmail = (user.email || '').toLowerCase();
+          const currentStaff = staffListRef.current;
+          const matched = currentStaff.find(s => 
+            s.email.toLowerCase() === userEmail || (s.authUserId && s.authUserId === user.id)
+          );
+
+          if (matched) {
+            if (matched.accountStatus === 'suspended') {
+              handleSetCurrentUser({ ...matched, accountStatus: 'suspended' });
+              return;
+            }
+            if (matched.accountStatus === 'rejected') {
+              handleSetCurrentUser({ ...matched, accountStatus: 'rejected' });
+              return;
+            }
+            const activeUser: StaffMember = {
+              ...matched,
+              authUserId: user.id,
+              accountStatus: matched.accountStatus || 'approved'
+            };
+            handleSetCurrentUser(activeUser);
+
+            // Record Audit Log for login session (once per session)
+            if (loggedInAuditTracked.current !== activeUser.id) {
+              loggedInAuditTracked.current = activeUser.id;
+              const isGoogle = user.app_metadata?.provider === 'google' || user.identities?.some((i: any) => i.provider === 'google');
+              recordAuditLog({
+                userId: activeUser.id,
+                userName: activeUser.name,
+                userEmail: activeUser.email,
+                userRole: String(activeUser.role),
+                userAvatar: activeUser.avatarUrl,
+                action: 'LOGIN',
+                method: isGoogle ? 'google_oauth' : 'session',
+                status: 'SUCCESS',
+                details: isGoogle ? 'Authenticated via Google OAuth 2.0 Identity Provider' : 'Authenticated via restored system session'
+              }).then(newEntry => {
+                setAuditLogs(prev => [newEntry, ...prev.filter(l => l.id !== newEntry.id)]);
+              }).catch(err => console.debug('Audit log record error:', err));
+            }
+            return;
+          }
+
+          // User is not in approved staff list -> Check or create employee access request
+          const fullName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'Google User';
+          const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture || user.user_metadata?.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80';
+
+          try {
+            const req = await createOrGetAccessRequest({
+              authUserId: user.id,
+              email: user.email,
+              fullName,
+              avatarUrl,
+              provider: 'google'
+            });
+
+            setAccessRequests(prev => {
+              const idx = prev.findIndex(r => r.id === req.id);
+              if (idx > -1) {
+                const copy = [...prev];
+                copy[idx] = req;
+                return copy;
+              }
+              return [req, ...prev];
+            });
+
+            if (req.status === 'pending') {
+              handleSetCurrentUser({
+                id: user.id,
+                staffId: 'PENDING',
+                name: req.fullName,
+                email: req.email,
+                role: Role.GEN_STAFF,
+                department: 'Pending Verification',
+                avatarUrl: req.avatarUrl,
+                joinedDate: new Date(),
+                accountStatus: 'pending',
+                authUserId: user.id
+              });
+              return;
+            }
+
+            if (req.status === 'rejected') {
+              handleSetCurrentUser({
+                id: user.id,
+                staffId: 'REJECTED',
+                name: req.fullName,
+                email: req.email,
+                role: Role.GEN_STAFF,
+                department: 'Access Declined',
+                avatarUrl: req.avatarUrl,
+                joinedDate: new Date(),
+                accountStatus: 'rejected',
+                authUserId: user.id
+              });
+              return;
+            }
+
+            if (req.status === 'approved') {
+              const cloudData = await loadAllAppDataFromSupabase();
+              if (cloudData?.staff) {
+                setStaffList(cloudData.staff);
+                const approvedPerson = cloudData.staff.find((s: StaffMember) => s.email.toLowerCase() === userEmail);
+                if (approvedPerson) {
+                  handleSetCurrentUser(approvedPerson);
+                  return;
+                }
+              }
+            }
+          } catch (err) {
+            console.error('Error handling employee access request on login:', err);
+          }
+        };
+
+        supabase.auth.getSession().then(({ data }) => {
+          if (data?.session?.provider_token) {
+            sessionStorage.setItem('mw_google_calendar_token', data.session.provider_token);
+            sessionStorage.setItem('mw_google_provider_token', data.session.provider_token);
+            if (data.session.user?.email) {
+              sessionStorage.setItem('mw_google_calendar_email', data.session.user.email);
+            }
+          }
+          if (data?.session?.user) {
+            syncUser(data.session.user);
+          }
+        });
+
+        const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+          if (session?.provider_token) {
+            sessionStorage.setItem('mw_google_calendar_token', session.provider_token);
+            sessionStorage.setItem('mw_google_provider_token', session.provider_token);
+            if (session.user?.email) {
+              sessionStorage.setItem('mw_google_calendar_email', session.user.email);
+            }
+          }
+          syncUser(session?.user || null);
+        });
+
+        return () => {
+          authListener?.subscription.unsubscribe();
+        };
+      }
+    }
   }, []);
+
+  const refreshAccessData = useCallback(async () => {
+    const reqs = await loadAllAccessRequests();
+    setAccessRequests(reqs);
+    if (isSupabaseEnabled) {
+      const cloudData = await loadAllAppDataFromSupabase();
+      if (cloudData?.staff && Array.isArray(cloudData.staff) && cloudData.staff.length > 0) {
+        setStaffList(cloudData.staff);
+        try {
+          localStorage.setItem('mw_staff', JSON.stringify(cloudData.staff));
+        } catch (e) {}
+      }
+    }
+    // If pending user was approved by admin, check status
+    if (currentUser?.accountStatus === 'pending') {
+      const myReq = reqs.find(r => r.authUserId === currentUser.id || r.email.toLowerCase() === currentUser.email.toLowerCase());
+      if (myReq && myReq.status === 'approved') {
+        const cloudData = await loadAllAppDataFromSupabase();
+        const activeStaff = cloudData?.staff?.find((s: StaffMember) => s.email.toLowerCase() === currentUser.email.toLowerCase());
+        if (activeStaff) {
+          setCurrentUser(activeStaff);
+        } else {
+          const localStaff = localStorage.getItem('mw_staff');
+          if (localStaff) {
+            const list: StaffMember[] = JSON.parse(localStaff);
+            const found = list.find(s => s.email.toLowerCase() === currentUser.email.toLowerCase());
+            if (found) setCurrentUser(found);
+          }
+        }
+      } else if (myReq && myReq.status === 'rejected') {
+        setCurrentUser(prev => prev ? { ...prev, accountStatus: 'rejected' } : null);
+      }
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -187,8 +494,13 @@ const App: React.FC = () => {
         return newArr;
       });
     }
-    if (storageMode === 'cloud' && isFirebaseEnabled && db) { 
-      try { await setDoc(doc(db, col, id), data); } catch (err) { console.error(`Cloud write failure:`, err); } 
+    if (storageMode === 'cloud') {
+      if (isSupabaseEnabled) {
+        syncToSupabase(col, id, data).catch(err => console.debug('Supabase sync:', err));
+      }
+      if (isFirebaseEnabled && db) { 
+        try { await setDoc(doc(db, col, id), data); } catch (err) { console.error(`Cloud write failure:`, err); } 
+      }
     }
   };
 
@@ -201,8 +513,13 @@ const App: React.FC = () => {
         return newArr;
       });
     }
-    if (storageMode === 'cloud' && isFirebaseEnabled && db) { 
-      try { await deleteDoc(doc(db, col, id)); } catch (err) { console.error(`Cloud delete failure:`, err); } 
+    if (storageMode === 'cloud') {
+      if (isSupabaseEnabled) {
+        deleteFromSupabase(col, id).catch(err => console.debug('Supabase delete:', err));
+      }
+      if (isFirebaseEnabled && db) { 
+        try { await deleteDoc(doc(db, col, id)); } catch (err) { console.error(`Cloud delete failure:`, err); } 
+      }
     }
   };
 
@@ -212,6 +529,9 @@ const App: React.FC = () => {
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     saveLocalData('messages', updatedMessages);
+    if (isSupabaseEnabled) {
+      syncToSupabase('messages', userMessage.id, userMessage).catch(err => console.debug('Supabase message sync:', err));
+    }
   };
 
   const handleCreateChannel = async (name: string, type: 'public' | 'private' | 'project', description: string) => {
@@ -331,7 +651,76 @@ const App: React.FC = () => {
     if (todo) { const updated = { ...todo, completed: !todo.completed }; await writeData('todos', id, updated, setTodos, todos); }
   };
 
-  const handleLogout = () => { setCurrentUser(null); setView('dashboard'); setIsSidebarOpen(false); };
+  const handleLogout = async () => {
+    if (currentUser) {
+      recordAuditLog({
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userEmail: currentUser.email,
+        userRole: String(currentUser.role),
+        userAvatar: currentUser.avatarUrl,
+        action: 'LOGOUT',
+        method: 'direct',
+        status: 'SUCCESS',
+        details: `Operator ${currentUser.name} signed out of system workspace`
+      }).catch(err => console.debug('Audit log record error:', err));
+    }
+    if (isSupabaseEnabled && supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.debug('Supabase signOut error:', err);
+      }
+    }
+    loggedInAuditTracked.current = null;
+    handleSetCurrentUser(null);
+    setView('dashboard');
+    setIsSidebarOpen(false);
+  };
+
+  const handleBackupToCloud = async () => {
+    if (!isSupabaseEnabled || isBackingUp) return;
+    setIsBackingUp(true);
+    try {
+      const allData = {
+        projects,
+        staff: staffList,
+        clients: clientList,
+        todos,
+        events,
+        notes: meetingNotes,
+        agency: agencyProfile,
+        messages,
+        channels,
+        notifications,
+        procedures,
+        pettyCash,
+        leaveRequests,
+        audit_logs: auditLogs
+      };
+      await syncAllAppDataToSupabase(allData);
+
+      if (currentUser) {
+        const backupLog = await recordAuditLog({
+          userId: currentUser.id,
+          userName: currentUser.name,
+          userEmail: currentUser.email,
+          userRole: String(currentUser.role),
+          action: 'DATABASE_BACKUP',
+          method: 'system',
+          status: 'SUCCESS',
+          details: `Master database snapshot successfully backed up to Supabase Cloud (${projects.length} projects, ${clientList.length} clients, ${staffList.length} staff)`
+        });
+        setAuditLogs(prev => [backupLog, ...prev]);
+      }
+      alert('Master database snapshot successfully synced to Supabase Cloud!');
+    } catch (err) {
+      console.error('Master database backup failure:', err);
+      alert('Cloud backup encountered an error. Check console for details.');
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
 
   const handleNav = (targetView: ViewState) => {
     setView(targetView);
@@ -464,11 +853,11 @@ const App: React.FC = () => {
   // Rule: Projects should only be visible to admins, managers, AEs and Finance
   const canViewProjects = isSuperAdmin || isAdmin || isGM || isManager || isAE || isAccounts || !!currentUser?.permissions?.canViewProjects;
 
-  // Rule: New campaign can be created ONLY by Super Admin and Admin
-  const canCreateCampaign = isSuperAdmin || isAdmin;
+  // Rule: New campaign can be created only by AE / managers / admins / super admins / general managers
+  const canCreateCampaign = isSuperAdmin || isAdmin || isGM || isManager || isAE;
 
-  // Rule: Management buttons displayed ONLY for Super Admin and Admin
-  const canViewManagerButtons = isSuperAdmin || isAdmin;
+  // Rule: Management buttons displayed only for managers / admins / super admins / general managers
+  const canViewManagerButtons = isSuperAdmin || isAdmin || isGM || isManager;
 
   // Rule: Workload dashboard page access for AE / managers / admins / super admins / general managers
   const canAccessWorkload = isSuperAdmin || isAdmin || isGM || isManager || isAE || !!currentUser?.permissions?.canViewWorkload;
@@ -477,14 +866,14 @@ const App: React.FC = () => {
   const accessibleProjects = useMemo(() => {
     if (!canViewProjects) return [];
     if (isSuperAdmin || isAdmin || isGM || currentUser?.permissions?.canViewAllProjects) {
-      return projects;
+      return projects || [];
     }
     if (isManager && currentUser?.department) {
       const dept = currentUser.department.toLowerCase();
-      return projects.filter(p => {
-        const hasDeptStaff = p.steps.some(s => s.tasks.some(t => {
+      return (projects || []).filter(p => {
+        const hasDeptStaff = (p.steps || []).some(s => (s.tasks || []).some(t => {
           if (!t.assignedTo) return false;
-          const assignedStaff = staffList.find(st => st.id === t.assignedTo);
+          const assignedStaff = (staffList || []).find(st => st.id === t.assignedTo);
           return assignedStaff && (assignedStaff.department || '').toLowerCase() === dept;
         }));
         const matchesCategory = p.type && (
@@ -496,7 +885,7 @@ const App: React.FC = () => {
         return hasDeptStaff || matchesCategory;
       });
     }
-    return projects;
+    return projects || [];
   }, [projects, canViewProjects, isSuperAdmin, isAdmin, isGM, isManager, currentUser?.permissions, currentUser?.department, staffList]);
 
   const getViewMeta = () => {
@@ -622,64 +1011,97 @@ const App: React.FC = () => {
     items.push({ id: 'notes', label: 'Notes', code: '09' });
     items.push({ id: 'hr', label: 'HR', code: '10' });
 
-    // CRITICAL REQUIREMENT: "access control should only be displayed on the menu of super admin only. everyone else should not see access control."
-    if (isSuperAdmin) {
+    // Access control displayed to Super Admin, GM, and Admin authorized to verify employees
+    if (canAccessModule(currentUser, 'access')) {
       items.push({ id: 'access', label: 'Access Control', code: '11' });
     }
 
     return items;
-  }, [canViewProjects, canAccessWorkload, canViewFinance, isSuperAdmin]);
+  }, [canViewProjects, canAccessWorkload, canViewFinance, currentUser]);
 
-  if (!currentUser) return <Login onLogin={setCurrentUser} staffList={staffList} />;
+  if (!currentUser) return <Login onLogin={handleSetCurrentUser} staffList={staffList} />;
+
+  if (currentUser.accountStatus === 'pending') {
+    const currentReq = accessRequests.find(r => r.authUserId === currentUser.id || r.email.toLowerCase() === currentUser.email.toLowerCase());
+    return (
+      <PendingApprovalScreen
+        request={currentReq || {
+          fullName: currentUser.name,
+          email: currentUser.email,
+          avatarUrl: currentUser.avatarUrl,
+          status: 'pending',
+          requestedAt: new Date().toISOString()
+        }}
+        onRefresh={refreshAccessData}
+        onSignOut={handleLogout}
+      />
+    );
+  }
+
+  if (currentUser.accountStatus === 'rejected') {
+    return (
+      <RejectedAccessScreen
+        email={currentUser.email}
+        onSignOut={handleLogout}
+      />
+    );
+  }
+
+  if (currentUser.accountStatus === 'suspended') {
+    return (
+      <SuspendedAccessScreen
+        email={currentUser.email}
+        onSignOut={handleLogout}
+      />
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-[var(--jarvis-bg-dark)] text-white flex flex-col font-sans selection:bg-white selection:text-black overflow-hidden relative">
-      {/* Dynamic JARVIS Ambient Floating Liquid Glass Orbs */}
-      {jarvisTheme.ambientOrbs && (
-        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-          <div 
-            className="absolute -top-32 -left-32 w-[600px] h-[600px] rounded-full blur-[120px] opacity-25 animate-orb-1"
-            style={{ background: `radial-gradient(circle, var(--jarvis-primary) 0%, transparent 70%)` }}
-          />
-          <div 
-            className="absolute top-1/3 -right-40 w-[550px] h-[550px] rounded-full blur-[130px] opacity-20 animate-orb-2"
-            style={{ background: `radial-gradient(circle, var(--jarvis-secondary) 0%, transparent 70%)` }}
-          />
-          <div 
-            className="absolute -bottom-40 left-1/4 w-[700px] h-[700px] rounded-full blur-[140px] opacity-20 animate-orb-3"
-            style={{ background: `radial-gradient(circle, var(--jarvis-primary) 0%, transparent 70%)` }}
-          />
-        </div>
-      )}
-
-      {/* Holographic Scanline CRT Effect */}
-      {jarvisTheme.scanlineEffect && (
-        <div className="fixed inset-0 pointer-events-none z-[80] opacity-[0.035] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px]" />
-      )}
-
-      <div ref={mainScrollRef} className="flex-1 flex flex-col min-w-0 overflow-y-auto custom-scrollbar relative z-10 transition-all duration-300">
+    <div className="min-h-screen bg-[#060709] text-white flex flex-col font-sans selection:bg-white selection:text-black overflow-hidden relative">
+      <div ref={mainScrollRef} className="flex-1 flex flex-col min-w-0 overflow-y-auto custom-scrollbar relative transition-all duration-300">
         
-        {/* Precision Dual-Layer Header matching JARVIS liquid glass specification */}
-        <header className="fixed top-0 left-0 right-0 z-[60] liquid-glass border-b border-[var(--jarvis-border)] transition-all">
+        {/* Precision Dual-Layer Header matching screenshot */}
+        <header className="fixed top-0 left-0 right-0 z-[60] bg-[#07080a]/95 backdrop-blur-md border-b border-neutral-800/80 transition-all">
           {/* Top Row: System telemetry & primary nav */}
-          <div className="h-16 px-4 sm:px-8 flex items-center justify-between border-b border-black/40 gap-4">
+          <div className="h-16 px-4 sm:px-8 flex items-center justify-between border-b border-neutral-900/90 gap-4">
             <div className="flex items-center gap-6 shrink-0">
               <div className="cursor-pointer group" onClick={() => handleNav('dashboard')}>
-                <div className="font-mono text-[9px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] leading-none mb-1 flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
-                  <span>PROPRIETARY ECOSYSTEM // JARVIS V4.0.2</span>
+                <div className="font-mono text-[9px] text-neutral-400 uppercase tracking-[0.25em] leading-none mb-1">
+                  PROPRIETARY ECOSYSTEM // V4.0.2
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-black text-lg sm:text-xl tracking-tight uppercase text-white font-heading">MEDIAWIZE</span>
-                  <span className="font-light text-lg sm:text-xl tracking-widest text-[var(--jarvis-primary)] hud-glow-text">OPS</span>
+                  <span className="font-light text-lg sm:text-xl tracking-widest text-neutral-400">OPS</span>
                 </div>
               </div>
 
-              {/* Status pill tag */}
-              <div className="hidden sm:inline-flex items-center gap-2 px-3 py-1 bg-black/50 border border-[var(--jarvis-border)] rounded-full text-[10px] font-mono text-neutral-300 shadow-[0_0_10px_rgba(var(--jarvis-primary-rgb),0.2)]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] shadow-[0_0_8px_var(--jarvis-primary)] animate-pulse"></span>
-                <span>{jarvisTheme.name.toUpperCase()}</span>
+              {/* Status pill tag & Cloud Sync */}
+              <div className="hidden sm:inline-flex items-center gap-2 px-3 py-1 bg-[#101216] border border-neutral-800 rounded-full text-[10px] font-mono text-neutral-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse"></span>
+                <span>{isSupabaseEnabled ? 'Supabase Cloud Connected' : 'Pulse Analytics'}</span>
               </div>
+
+              {isSupabaseEnabled && (
+                <button
+                  type="button"
+                  onClick={handleBackupToCloud}
+                  disabled={isBackingUp}
+                  className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#12141a] hover:bg-neutral-800 border border-neutral-700 hover:border-emerald-500/50 text-[10px] font-mono text-neutral-300 hover:text-white rounded-sm transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+                  title="Backup all workspace data to Supabase Cloud"
+                >
+                  {isBackingUp ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin text-emerald-400" />
+                      <span>Syncing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Cloud size={12} className="text-emerald-400" />
+                      <span>Cloud Sync</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
 
             {/* Center Numbered Navigation */}
@@ -689,17 +1111,14 @@ const App: React.FC = () => {
                 return (
                   <button
                     key={nav.id}
-                    onClick={() => {
-                      handleNav(nav.id as any);
-                      playJarvisSound('click', !jarvisTheme.audioFeedback);
-                    }}
-                    className={`flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider transition-all py-1 ${
+                    onClick={() => handleNav(nav.id as any)}
+                    className={`flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider transition-colors py-1 ${
                       isActive 
-                        ? 'text-[var(--jarvis-primary)] font-bold border-b-2 border-[var(--jarvis-primary)] hud-glow-text' 
-                        : 'text-neutral-400 hover:text-white'
+                        ? 'text-white font-bold border-b-2 border-white' 
+                        : 'text-neutral-400 hover:text-neutral-200'
                     }`}
                   >
-                    <span className="text-[10px] opacity-70">{nav.code}</span>
+                    <span className="text-[10px] text-neutral-400">{nav.code}</span>
                     <span>{nav.label}</span>
                   </button>
                 );
@@ -707,43 +1126,26 @@ const App: React.FC = () => {
             </nav>
 
             {/* Right Telemetry & Actions */}
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-4 shrink-0">
               <div className="hidden 2xl:block text-right font-mono text-[9px] text-neutral-400 leading-tight">
-                <div className="text-[var(--jarvis-primary)]">[ 6.9271° N, 79.8612° E ]</div>
+                <div>[ 6.9271° N, 79.8612° E ]</div>
                 <div className="text-neutral-400">NODE: COLOMBO 07</div>
               </div>
 
-              {/* High Contrast JARVIS Liquid Glass Action Button */}
+              {/* High Contrast White Action Button matching screenshot */}
               {canCreateCampaign && (
                 <button
-                  onClick={() => {
-                    setIsNewProjectModalOpen(true);
-                    playJarvisSound('deploy', !jarvisTheme.audioFeedback);
-                  }}
-                  className="jarvis-btn-primary px-4 py-2 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 rounded-sm transition-all shadow-md active:scale-95 shrink-0 cursor-pointer"
-                  title="Initialize New Campaign Node"
+                  onClick={() => setIsNewProjectModalOpen(true)}
+                  className="bg-white text-black hover:bg-neutral-200 px-4 py-2 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 rounded-sm transition-all shadow-md active:scale-95 shrink-0 cursor-pointer"
                 >
                   <Plus size={14} strokeWidth={3} /> NEW CAMPAIGN
                 </button>
               )}
 
-              {/* JARVIS Settings & Optics Button */}
-              <button
-                onClick={() => {
-                  setIsSettingsOpen(true);
-                  playJarvisSound('sonar', !jarvisTheme.audioFeedback);
-                }}
-                className="h-9 px-3 border border-[var(--jarvis-border)] bg-[rgba(var(--jarvis-primary-rgb),0.12)] hover:bg-[rgba(var(--jarvis-primary-rgb),0.24)] hover:border-[var(--jarvis-primary)] text-white rounded-sm flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.25)] cursor-pointer group"
-                title="JARVIS Holographic Theme, Optics & Color Customizer"
-              >
-                <Sliders size={15} className="text-[var(--jarvis-primary)] group-hover:rotate-45 transition-transform duration-300" />
-                <span className="hidden lg:inline font-mono text-[10px] uppercase font-bold tracking-wider text-[var(--jarvis-primary)]">SETTINGS</span>
-              </button>
-
               {/* Hub Icon */}
               <button
                 onClick={handleOpenHub}
-                className="w-9 h-9 border border-[var(--jarvis-border)] bg-black/40 text-neutral-300 hover:text-white hover:border-[var(--jarvis-primary)] rounded-sm flex items-center justify-center transition-all relative"
+                className="w-9 h-9 border border-neutral-800 bg-[#101216] text-neutral-300 hover:text-white hover:border-neutral-700 rounded-sm flex items-center justify-center transition-all relative"
                 title="Communication Hub"
               >
                 <MessageSquare size={16} />
@@ -752,23 +1154,23 @@ const App: React.FC = () => {
 
               {/* Menu Drawer */}
               <button
-                onClick={() => { setSidebarTab('menu'); setIsSidebarOpen(true); playJarvisSound('click', !jarvisTheme.audioFeedback); }}
-                className="w-9 h-9 border border-[var(--jarvis-border)] bg-black/40 text-neutral-300 hover:text-white hover:border-[var(--jarvis-primary)] rounded-sm flex items-center justify-center transition-all"
+                onClick={() => { setSidebarTab('menu'); setIsSidebarOpen(true); }}
+                className="w-9 h-9 border border-neutral-800 bg-[#101216] text-neutral-300 hover:text-white hover:border-neutral-700 rounded-sm flex items-center justify-center transition-all"
                 title="System Menu"
               >
                 <Menu size={16} />
               </button>
 
               {/* User Avatar */}
-              <div className="flex items-center gap-2 border border-[var(--jarvis-border)] bg-black/40 pl-1.5 pr-3 py-1 rounded-sm">
-                <img src={currentUser.avatarUrl} className="w-6 h-6 rounded-sm object-cover border border-[var(--jarvis-primary)]/40" alt="" />
-                <span className="hidden sm:inline font-mono text-[10px] text-neutral-300 uppercase">{currentUser.name.split(' ')[0]}</span>
+              <div className="flex items-center gap-2 border border-neutral-800 bg-[#101216] pl-1.5 pr-3 py-1 rounded-sm">
+                <img src={currentUser.avatarUrl} className="w-6 h-6 rounded-sm object-cover" alt="" />
+                <span className="hidden sm:inline font-mono text-[10px] text-neutral-300 uppercase">{(currentUser.name || 'User').split(' ')[0]}</span>
               </div>
 
               {/* Logout */}
               <button
                 onClick={handleLogout}
-                className="w-9 h-9 border border-neutral-800 bg-black/40 text-neutral-400 hover:text-rose-400 hover:border-rose-900/50 rounded-sm flex items-center justify-center transition-all"
+                className="w-9 h-9 border border-neutral-800 bg-[#101216] text-neutral-400 hover:text-rose-400 hover:border-rose-900/50 rounded-sm flex items-center justify-center transition-all"
                 title="Log Out"
               >
                 <LogOut size={16} />
@@ -777,19 +1179,19 @@ const App: React.FC = () => {
           </div>
 
           {/* Subheader Row: Module title & Switch Brief control */}
-          <div className="h-14 px-4 sm:px-8 bg-black/40 border-t border-[var(--jarvis-border)]/40 flex items-center justify-between gap-4">
+          <div className="h-14 px-4 sm:px-8 bg-[#0a0b0e] flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-8 h-8 jarvis-btn-primary text-black font-black text-xs flex items-center justify-center rounded-sm shrink-0 shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.4)]">
+              <div className="w-8 h-8 bg-white text-black font-black text-xs flex items-center justify-center rounded-sm shrink-0">
                 {viewMeta.badge}
               </div>
               <div className="flex items-center gap-3 min-w-0">
                 <h2 className="text-sm sm:text-base font-black tracking-tight text-white uppercase truncate font-heading">
                   {viewMeta.title}
                 </h2>
-                <span className="px-2 py-0.5 bg-[var(--jarvis-primary)] text-black font-black text-[9px] uppercase tracking-wider rounded-none shrink-0 shadow-[0_0_10px_rgba(var(--jarvis-primary-rgb),0.3)]">
+                <span className="px-2 py-0.5 bg-white text-black font-black text-[9px] uppercase tracking-wider rounded-none shrink-0">
                   {viewMeta.tag}
                 </span>
-                <span className="hidden md:inline text-xs text-neutral-300 font-medium truncate">
+                <span className="hidden md:inline text-xs text-neutral-400 font-medium truncate">
                   {viewMeta.subtitle}
                 </span>
               </div>
@@ -994,27 +1396,21 @@ const App: React.FC = () => {
           )}
 
           {view === 'access' && (
-            isSuperAdmin ? (
+            canAccessModule(currentUser, 'access') ? (
               <AccessManagement
                 staffList={staffList}
                 onUpdateStaffPermissions={handleUpdateStaffPermissions}
                 currentUser={currentUser}
                 departments={departments}
+                requests={accessRequests}
+                onRefreshData={refreshAccessData}
+                onUpdateStaffList={setStaffList}
               />
             ) : (
-              <div className="p-12 text-center bg-[#0e0f14] border border-rose-500/30 rounded-sm space-y-4 max-w-lg mx-auto mt-12">
-                <ShieldAlert size={48} className="text-rose-500 mx-auto" />
-                <h2 className="text-xl font-black uppercase text-white font-heading">Access Control Restricted</h2>
-                <p className="font-mono text-xs text-neutral-400">
-                  Access Control is exclusive to Super Admin authorization. You do not have clearance to modify security matrices.
-                </p>
-                <button 
-                  onClick={() => handleNav('dashboard')}
-                  className="px-4 py-2 bg-white text-black font-mono text-xs font-bold uppercase rounded-sm hover:bg-neutral-200 transition-colors"
-                >
-                  Return to Dashboard
-                </button>
-              </div>
+              <AccessDeniedScreen 
+                moduleName="Employee Access Control & Permissions Console" 
+                onReturn={() => handleNav('dashboard')} 
+              />
             )
           )}
 
@@ -1171,32 +1567,6 @@ const App: React.FC = () => {
               <div className={`flex-1 overflow-y-auto bg-[#0b0c10] custom-scrollbar ${sidebarTab === 'hub' ? 'p-0' : 'p-6'}`}>
                   {sidebarTab === 'menu' && (
                     <div className="space-y-6 animate-in fade-in duration-300">
-                        {/* JARVIS Theme & System Settings Action in Menu */}
-                        <button 
-                          onClick={() => {
-                            setIsSettingsOpen(true);
-                            setIsSidebarOpen(false);
-                            playJarvisSound('sonar', !jarvisTheme.audioFeedback);
-                          }}
-                          className="w-full flex items-center justify-between p-4 rounded-sm border border-[var(--jarvis-primary)] bg-[rgba(var(--jarvis-primary-rgb),0.1)] text-white shadow-[0_0_20px_-3px_rgba(var(--jarvis-primary-rgb),0.35)] transition-all text-left cursor-pointer group"
-                        >
-                          <div className="flex items-center gap-3.5 min-w-0">
-                            <div className="w-8 h-8 rounded-sm bg-black/60 border border-[var(--jarvis-primary)] flex items-center justify-center text-[var(--jarvis-primary)] group-hover:rotate-90 transition-transform shadow-[0_0_10px_rgba(var(--jarvis-primary-rgb),0.5)]">
-                              <Sliders size={16} />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="font-black text-xs uppercase tracking-wider text-[var(--jarvis-primary)] font-heading flex items-center gap-2">
-                                <span>JARVIS THEME & OPTICS</span>
-                                <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
-                              </div>
-                              <div className="text-[10px] text-neutral-300 truncate font-mono">
-                                Calibrate Colors // {jarvisTheme.name}
-                              </div>
-                            </div>
-                          </div>
-                          <Sparkles size={16} className="text-[var(--jarvis-primary)] animate-pulse shrink-0" />
-                        </button>
-
                         <div className="space-y-3">
                             <h3 className="font-mono text-[10px] uppercase text-neutral-400 tracking-[0.3em] px-1">System Modules</h3>
                             <div className="grid grid-cols-1 gap-2.5">
@@ -1211,8 +1581,7 @@ const App: React.FC = () => {
                                     { id: 'clients', code: '08', icon: Building2, label: 'Client Portals', desc: 'Accounts & brand contacts', visible: true },
                                     { id: 'notes', code: '09', icon: StickyNote, label: 'Meeting Intelligence', desc: 'Decision minutes & action items', visible: true },
                                     { id: 'hr', code: '10', icon: Heart, label: 'HR & Personnel', desc: 'Leave tracking, approvals & roster', visible: true },
-                                    // CRITICAL: access control should only be displayed on the menu of super admin only. everyone else should not see access control.
-                                    { id: 'access', code: '11', icon: ShieldCheck, label: 'Access Control', desc: 'Super admin security matrix & permissions', visible: isSuperAdmin }
+                                    { id: 'access', code: '11', icon: ShieldCheck, label: 'Access Control', desc: 'Employee verification & security matrix', visible: canAccessModule(currentUser, 'access') }
                                 ].filter(mod => mod.visible).map(mod => (
                                     <button 
                                         key={mod.id} 
@@ -1533,14 +1902,6 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* JARVIS System & Theme Settings Modal */}
-      <JARVISSettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        currentTheme={jarvisTheme}
-        onSaveTheme={handleSaveTheme}
-      />
     </div>
   );
 };

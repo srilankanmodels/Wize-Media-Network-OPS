@@ -58,9 +58,9 @@ const WorkloadDashboard: React.FC<WorkloadDashboardProps> = ({
   // Flatten all tasks across all projects with project context
   const allProjectTasks = useMemo(() => {
     const list: EnrichedTask[] = [];
-    projects.forEach(project => {
-      project.steps?.forEach(step => {
-        step.tasks?.forEach(task => {
+    (projects || []).forEach(project => {
+      (project.steps || []).forEach(step => {
+        (step.tasks || []).forEach(task => {
           const isTaskCompleted = !!(project.tasksCompleted && project.tasksCompleted[task.id]) || task.completed;
           list.push({
             ...task,
@@ -80,7 +80,7 @@ const WorkloadDashboard: React.FC<WorkloadDashboardProps> = ({
 
   // Aggregate stats per staff member
   const staffWorkloadStats = useMemo(() => {
-    return staffList.map(staff => {
+    return (staffList || []).map(staff => {
       // Direct tasks assigned explicitly to staff.id or matching their specific role
       const assignedTasks = allProjectTasks.filter(t => 
         t.assignedTo === staff.id || (!t.assignedTo && t.role === staff.role)

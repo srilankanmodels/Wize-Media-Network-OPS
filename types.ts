@@ -209,6 +209,91 @@ export interface Project {
   createdAt?: Date;
 }
 
+export type AccountStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
+
+export type PermissionKey = 
+  // Dashboard
+  | 'dashboard.view.personal'
+  | 'dashboard.view.executive'
+  | 'dashboard.view.analytics'
+  // Projects
+  | 'projects.view.assigned'
+  | 'projects.view.all'
+  | 'projects.create'
+  | 'projects.edit'
+  | 'projects.delete'
+  | 'projects.tasks.assign'
+  | 'projects.steps.approve'
+  // Clients
+  | 'clients.view.assigned'
+  | 'clients.view.all'
+  | 'clients.create'
+  | 'clients.edit'
+  | 'clients.delete'
+  // Finance
+  | 'finance.quotes.view'
+  | 'finance.quotes.create'
+  | 'finance.invoices.view'
+  | 'finance.payments.manage'
+  | 'finance.petty_cash.manage'
+  | 'finance.analytics.view'
+  // HR
+  | 'hr.staff.view'
+  | 'hr.employees.manage'
+  | 'hr.leaves.review'
+  | 'hr.records.restricted'
+  // Communication
+  | 'comm.channels.access'
+  | 'comm.messages.send'
+  | 'comm.channels.create'
+  // Meetings
+  | 'meetings.view'
+  | 'meetings.create'
+  | 'meetings.edit'
+  | 'meetings.actions.assign'
+  // System Administration
+  | 'system.employees.view_requests'
+  | 'system.employees.approve'
+  | 'system.employees.reject'
+  | 'system.employees.roles_assign'
+  | 'system.employees.suspend'
+  | 'system.roles.manage'
+  | 'system.audit_logs.view'
+  | 'system.backups.manage';
+
+export interface EmployeeAccessRequest {
+  id: string;
+  authUserId: string;
+  email: string;
+  fullName: string;
+  avatarUrl?: string;
+  provider: string; // 'google'
+  status: AccountStatus;
+  requestedAt: string; // ISO
+  reviewedAt?: string;
+  reviewedBy?: string;
+  reviewedByName?: string;
+  reviewNotes?: string;
+  assignedDepartment?: string;
+  assignedRole?: Role;
+}
+
+export interface EmployeeAccessAudit {
+  id: string;
+  actorId?: string;
+  actorName?: string;
+  actorRole?: string;
+  targetEmployeeId: string;
+  targetEmployeeName: string;
+  targetEmployeeEmail: string;
+  action: 'REQUEST_CREATED' | 'APPROVED' | 'REJECTED' | 'SUSPENDED' | 'REACTIVATED' | 'ROLE_CHANGED' | string;
+  previousValue?: Record<string, any>;
+  newValue?: Record<string, any>;
+  details?: string;
+  ipAddress?: string;
+  timestamp: string;
+}
+
 export interface StaffPermissions {
   canViewFinance?: boolean;           // Unlocked for Super Admin, Admin, GM, Accounts (or explicitly granted)
   canViewProjects?: boolean;          // Projects visible to Super Admin, Admin, GM, Managers, AEs, and Finance (or explicitly granted)
@@ -223,6 +308,8 @@ export interface StaffPermissions {
   canManageClients?: boolean;         // Unlocked for Admin, GM, Management, AE
   canManageAccessControl?: boolean;   // Super Admin ONLY
   canViewWorkload?: boolean;          // Unlocked for AE, Managers, Admin, Super Admin, GM
+  // Granular RBAC keys map
+  granular?: Partial<Record<PermissionKey, boolean>>;
 }
 
 export interface StaffMember {
@@ -244,6 +331,13 @@ export interface StaffMember {
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   permissions?: StaffPermissions;
+  // Google Auth & Employee Verification fields
+  authUserId?: string;
+  googleId?: string;
+  accountStatus?: AccountStatus;
+  approvedAt?: string;
+  approvedBy?: string;
+  approvedByName?: string;
 }
 
 export interface ActionItem {
@@ -360,23 +454,23 @@ export interface Procedure {
   tags?: string[];
 }
 
-// JARVIS Liquid Glass Theme Configuration
-export type JarvisPresetId = 'arc-cyan' | 'mark-crimson' | 'friday-emerald' | 'veronica-violet' | 'solar-amber' | 'stealth-chrome' | 'custom';
-
-export interface JarvisThemeConfig {
-  presetId: JarvisPresetId;
-  name: string;
-  tagline: string;
-  primaryAccent: string; // e.g. #00f0ff
-  secondaryAccent: string; // e.g. #0284c7
-  bgDark: string; // background base e.g. #05070e
-  glassBlur: 'subtle' | 'liquid' | 'deep'; // 12px, 20px, 32px
-  glowIntensity: 'subtle' | 'medium' | 'high'; // low, medium, ultra
-  glassOpacity: number; // 0.65 to 0.95
-  ambientOrbs: boolean;
-  audioFeedback: boolean;
-  scanlineEffect: boolean;
-  hudBorders: boolean;
+export interface AuditLog {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  userRole?: string;
+  userAvatar?: string;
+  action: 'LOGIN' | 'LOGOUT' | 'SESSION_RESTORE' | 'DATABASE_BACKUP' | string;
+  method: 'google_oauth' | 'password' | 'demo' | 'session' | 'system' | string;
+  ipAddress?: string;
+  userAgent?: string;
+  browser?: string;
+  os?: string;
+  device?: string;
+  status: 'SUCCESS' | 'FAILED';
+  details?: string;
+  timestamp: string; // ISO String
+  metadata?: Record<string, any>;
 }
-
 

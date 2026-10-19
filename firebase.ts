@@ -4,14 +4,29 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signO
 import { getStorage } from "firebase/storage";
 import appletConfig from "./firebase-applet-config.json";
 
+// Helper to safely get environment variables across Vite and Node
+const getEnvVar = (key: string): string => {
+  try {
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env?.[key]) {
+      return (import.meta as any).env[key];
+    }
+    if (typeof process !== 'undefined' && process.env?.[key]) {
+      return process.env[key];
+    }
+  } catch {
+    // fallback
+  }
+  return '';
+};
+
 // Merge environment variables with provisioned applet config
 const firebaseConfig = {
-  apiKey: process.env.VITE_FIREBASE_API_KEY || appletConfig.apiKey || "",
-  authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN || appletConfig.authDomain || "",
-  projectId: process.env.VITE_FIREBASE_PROJECT_ID || appletConfig.projectId || "",
-  storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET || appletConfig.storageBucket || "",
-  messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || appletConfig.messagingSenderId || "",
-  appId: process.env.VITE_FIREBASE_APP_ID || appletConfig.appId || ""
+  apiKey: getEnvVar('VITE_FIREBASE_API_KEY') || appletConfig.apiKey || "",
+  authDomain: getEnvVar('VITE_FIREBASE_AUTH_DOMAIN') || appletConfig.authDomain || "",
+  projectId: getEnvVar('VITE_FIREBASE_PROJECT_ID') || appletConfig.projectId || "",
+  storageBucket: getEnvVar('VITE_FIREBASE_STORAGE_BUCKET') || appletConfig.storageBucket || "",
+  messagingSenderId: getEnvVar('VITE_FIREBASE_MESSAGING_SENDER_ID') || appletConfig.messagingSenderId || "",
+  appId: getEnvVar('VITE_FIREBASE_APP_ID') || appletConfig.appId || ""
 };
 
 let app: any = null;
@@ -83,7 +98,11 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     cachedGoogleUser = result.user;
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
-    console.error("Gmail Sign In error:", error);
+    console.error("Google Workspace Sign In error:", error);
+    if (error.code === 'auth/unauthorized-domain') {
+      const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+      throw new Error(`Domain "${currentHost}" is not in Firebase Authorized Domains. Add "${currentHost}" in Firebase Console -> Authentication -> Settings -> Authorized Domains, or connect via Supabase.`);
+    }
     throw error;
   } finally {
     isSigningIn = false;

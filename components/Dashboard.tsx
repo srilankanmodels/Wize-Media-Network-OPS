@@ -124,10 +124,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
     if (isManager) {
       const dept = (currentUser.department || '').toLowerCase();
-      return projects.filter(p => {
-        const hasDeptStaff = p.steps.some(s => s.tasks.some(t => {
+      return (projects || []).filter(p => {
+        const hasDeptStaff = (p.steps || []).some(s => (s.tasks || []).some(t => {
           if (!t.assignedTo) return false;
-          const assignedStaff = staffList.find(st => st.id === t.assignedTo);
+          const assignedStaff = (staffList || []).find(st => st.id === t.assignedTo);
           return assignedStaff && (assignedStaff.department || '').toLowerCase() === dept;
         }));
         const matchesCategory = p.type && (
@@ -139,11 +139,11 @@ const Dashboard: React.FC<DashboardProps> = ({
         return hasDeptStaff || matchesCategory;
       });
     }
-    return projects;
+    return projects || [];
   }, [projects, canViewProjects, isSuperAdmin, isAdmin, isGM, isManager, currentUser.permissions, currentUser.department, staffList]);
 
-  const activeProjects = accessibleProjects.filter(p => p.status === 'In Progress');
-  const balance = pettyCash.reduce((sum, tx) => sum + (tx.type === 'Income' ? tx.amount : -tx.amount), 0);
+  const activeProjects = (accessibleProjects || []).filter(p => p.status === 'In Progress');
+  const balance = (pettyCash || []).reduce((sum, tx) => sum + (tx.type === 'Income' ? tx.amount : -tx.amount), 0);
 
   const canApproveLeaves = isSuperAdmin || isAdmin || isGM || isHR || isManager || !!currentUser.permissions?.canApproveLeaves;
 
@@ -154,7 +154,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (l.status !== 'Pending') return false;
       if (isSuperAdmin || isAdmin || isGM || isHR) return true;
       if (isManager || currentUser.permissions?.canApproveLeaves) {
-        const staff = staffList.find(s => s.id === l.staffId);
+        const staff = (staffList || []).find(s => s.id === l.staffId);
         const staffDept = (staff?.department || l.department || '').toLowerCase();
         const myDept = (currentUser.department || '').toLowerCase();
         return staffDept === myDept;
@@ -163,18 +163,18 @@ const Dashboard: React.FC<DashboardProps> = ({
     });
   }, [leaveRequests, canApproveLeaves, isSuperAdmin, isAdmin, isGM, isHR, isManager, staffList, currentUser]);
   
-  const teamStats = useMemo(() => staffList.map(staff => {
-    const staffTodos = todos.filter(t => t.userId === staff.id);
-    const allStaffTasks = projects.flatMap(p => 
-      p.steps.flatMap(step => 
-        step.tasks.filter(t => t.assignedTo === staff.id)
+  const teamStats = useMemo(() => (staffList || []).map(staff => {
+    const staffTodos = (todos || []).filter(t => t.userId === staff.id);
+    const allStaffTasks = (projects || []).flatMap(p => 
+      (p.steps || []).flatMap(step => 
+        (step.tasks || []).filter(t => t.assignedTo === staff.id)
           .map(task => ({ 
             ...task, 
             projectName: p.projectName, 
             clientName: p.clientName, 
             jobNumber: p.jobNumber,
             projectId: p.id,
-            isCompleted: !!p.tasksCompleted[task.id]
+            isCompleted: !!(p.tasksCompleted && p.tasksCompleted[task.id])
           }))
       )
     );
@@ -198,12 +198,12 @@ const Dashboard: React.FC<DashboardProps> = ({
   }), [staffList, todos, projects]);
 
   const sortedEfficiency = useMemo(() => [...teamStats].sort((a,b) => b.efficiency - a.efficiency), [teamStats]);
-  const selectedStaffData = useMemo(() => teamStats.find(t => t.staff.id === selectedStaffForWorkload?.id), [teamStats, selectedStaffForWorkload]);
+  const selectedStaffData = useMemo(() => teamStats.find(t => t.staff?.id === selectedStaffForWorkload?.id), [teamStats, selectedStaffForWorkload]);
 
   const currentUserTasks = useMemo(() => {
-    return projects.flatMap(p => 
-      p.steps.flatMap(s => 
-        s.tasks.filter(t => (t.assignedTo === currentUser.id || t.role === currentUser.role) && !p.tasksCompleted[t.id])
+    return (projects || []).flatMap(p => 
+      (p.steps || []).flatMap(s => 
+        (s.tasks || []).filter(t => (t.assignedTo === currentUser.id || t.role === currentUser.role) && !(p.tasksCompleted && p.tasksCompleted[t.id]))
           .map(t => ({ ...t, projectName: p.projectName, projectId: p.id, jobNumber: p.jobNumber }))
       )
     );
@@ -219,7 +219,13 @@ const Dashboard: React.FC<DashboardProps> = ({
     setIsAiTyping(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+      if (!apiKey) {
+        setAiChat(prev => [...prev, { role: 'bot', text: "AI link unavailable: Gemini API key is not configured. Add API_KEY to .env to enable." }]);
+        setIsAiTyping(false);
+        return;
+      }
+      const ai = new GoogleGenAI({ apiKey });
       const contextPrompt = `You are "WizeMind", official AI strategist for Mediawize. 
       CONTEXT:
       - ACTIVE JOBS: ${activeProjects.map(p => `${p.projectName} (${p.clientName})`).join(', ')}
@@ -673,7 +679,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 </div>
                 <span className="font-mono text-[9px] text-neutral-300 uppercase truncate w-full text-center">
-                  {staff.name.split(' ')[0]}
+                  {(staff.name || 'Member').split(' ')[0]}
                 </span>
                 <span className="font-mono text-[8px] text-neutral-400 uppercase">
                   {load} TASKS
@@ -729,7 +735,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     {project.jobNumber}
                   </span>
                   <span className="text-neutral-400 uppercase">
-                    STEP {project.currentStep} OF {project.steps.length}
+                    STEP {project.currentStep} OF {project.steps?.length || 0}
                   </span>
                 </div>
 
@@ -853,7 +859,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                   Zero Events Synced
                 </div>
               ) : (
-                events.slice().sort((a,b) => a.date.getTime() - b.date.getTime()).map(ev => (
+                (events || []).slice().sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(ev => (
                   <div key={ev.id} className="p-3 bg-[#101217] border border-neutral-800/80 rounded-sm flex items-start gap-3">
                     <div className="w-10 h-10 bg-[#161822] border border-neutral-700/60 flex flex-col items-center justify-center shrink-0 rounded-sm font-mono text-white">
                       <span className="text-xs font-bold leading-none">{new Date(ev.date).getDate()}</span>

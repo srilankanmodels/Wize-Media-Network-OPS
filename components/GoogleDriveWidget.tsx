@@ -1,11 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { StaffMember } from '../types';
-import { 
-  googleSignIn, 
-  getAccessToken, 
-  logoutGoogle, 
-  initAuth 
-} from '../firebase';
+import { supabase, isSupabaseEnabled, connectGoogleViaSupabase, disconnectGoogleWorkspaceToken, GOOGLE_WORKSPACE_SCOPES } from '../supabase';
 import { 
   fetchDriveFiles, 
   createDriveFolder, 
@@ -44,24 +39,32 @@ const GoogleDriveWidget: React.FC<GoogleDriveWidgetProps> = ({ currentUser, onAt
   const [fileToDelete, setFileToDelete] = useState<GoogleDriveFile | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Initialize Auth listener
+  // Initialize Auth from sessionStorage or Supabase
   useEffect(() => {
-    const unsubscribe = initAuth(
-      (user, cachedToken) => {
-        setGoogleUser(user);
-        setToken(cachedToken);
-        loadFiles(cachedToken, currentFolder.id);
-      },
-      () => {
-        setGoogleUser(null);
-        setToken(null);
-      }
-    );
+    const cached = sessionStorage.getItem('mw_google_drive_token') || sessionStorage.getItem('mw_google_provider_token') || sessionStorage.getItem('mw_google_calendar_token');
+    const cachedEmail = sessionStorage.getItem('mw_google_calendar_email');
+    if (cached) {
+      setToken(cached);
+      if (cachedEmail) setGoogleUser({ email: cachedEmail });
+      loadFiles(cached, currentFolder.id);
+    }
 
-    return () => {
-      if (typeof unsubscribe === 'function') unsubscribe();
-    };
-  }, []);
+    if (isSupabaseEnabled && supabase) {
+      const { data: authSub } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (session?.provider_token) {
+          const tok = session.provider_token;
+          const email = session.user?.email || 'Office Account';
+          setToken(tok);
+          setGoogleUser({ email, displayName: session.user?.user_metadata?.full_name });
+          sessionStorage.setItem('mw_google_drive_token', tok);
+          loadFiles(tok, currentFolder.id);
+        }
+      });
+      return () => {
+        authSub?.subscription.unsubscribe();
+      };
+    }
+  }, [currentFolder.id]);
 
   const loadFiles = async (accessToken: string, folderId: string, search?: string) => {
     setIsLoading(true);
@@ -85,22 +88,17 @@ const GoogleDriveWidget: React.FC<GoogleDriveWidgetProps> = ({ currentUser, onAt
     setIsLoading(true);
     setError(null);
     try {
-      const result = await googleSignIn();
-      if (result) {
-        setToken(result.accessToken);
-        setGoogleUser(result.user);
-        await loadFiles(result.accessToken, currentFolder.id);
-      }
+      const { error } = await connectGoogleViaSupabase(GOOGLE_WORKSPACE_SCOPES.DRIVE);
+      if (error) setError(error.message);
     } catch (err: any) {
-      console.error('Google Sign In Error:', err);
-      setError(err.message || 'Google authorization was cancelled or failed.');
+      setError(err.message || 'Supabase Google Drive authorization failed.');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleDisconnect = async () => {
-    await logoutGoogle();
+    disconnectGoogleWorkspaceToken();
     setToken(null);
     setGoogleUser(null);
     setFiles([]);

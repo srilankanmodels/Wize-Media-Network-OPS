@@ -63,7 +63,13 @@ const FloatingAI: React.FC<FloatingAIProps> = ({ projects, staffList, balance, c
     setIsTyping(true);
 
     try {
-      const genAI = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiKey = (typeof process !== 'undefined' && process.env?.API_KEY) || (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+      if (!apiKey) {
+        setChat(prev => [...prev, { role: 'bot', text: "AI neural link offline: Gemini API key is not configured. Add API_KEY to .env to enable." }]);
+        setIsTyping(false);
+        return;
+      }
+      const genAI = new GoogleGenAI({ apiKey });
       const model = 'gemini-2.5-flash';
       
       const context = `

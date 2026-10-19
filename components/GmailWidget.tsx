@@ -1,11 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { StaffMember } from '../types';
-import { 
-  googleSignIn, 
-  getAccessToken, 
-  logoutGoogle, 
-  initAuth 
-} from '../firebase';
+import { supabase, isSupabaseEnabled, connectGoogleViaSupabase, disconnectGoogleWorkspaceToken, GOOGLE_WORKSPACE_SCOPES } from '../supabase';
 import { 
   fetchRecentEmails, 
   sendGmailMessage, 
@@ -37,23 +32,31 @@ const GmailWidget: React.FC<GmailWidgetProps> = ({ currentUser }) => {
   const [isSending, setIsSending] = useState(false);
   const [showSendConfirmation, setShowSendConfirmation] = useState(false);
 
-  // Initialize Auth listener
+  // Initialize Auth from sessionStorage or Supabase
   useEffect(() => {
-    const unsubscribe = initAuth(
-      (user, cachedToken) => {
-        setGoogleUser(user);
-        setToken(cachedToken);
-        loadEmails(cachedToken);
-      },
-      () => {
-        setGoogleUser(null);
-        setToken(null);
-      }
-    );
+    const cached = sessionStorage.getItem('mw_google_gmail_token') || sessionStorage.getItem('mw_google_provider_token') || sessionStorage.getItem('mw_google_calendar_token');
+    const cachedEmail = sessionStorage.getItem('mw_google_calendar_email');
+    if (cached) {
+      setToken(cached);
+      if (cachedEmail) setGoogleUser({ email: cachedEmail });
+      loadEmails(cached);
+    }
 
-    return () => {
-      if (typeof unsubscribe === 'function') unsubscribe();
-    };
+    if (isSupabaseEnabled && supabase) {
+      const { data: authSub } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (session?.provider_token) {
+          const tok = session.provider_token;
+          const email = session.user?.email || 'Office Account';
+          setToken(tok);
+          setGoogleUser({ email, displayName: session.user?.user_metadata?.full_name });
+          sessionStorage.setItem('mw_google_gmail_token', tok);
+          loadEmails(tok);
+        }
+      });
+      return () => {
+        authSub?.subscription.unsubscribe();
+      };
+    }
   }, []);
 
   const loadEmails = async (accessToken: string) => {
@@ -78,22 +81,17 @@ const GmailWidget: React.FC<GmailWidgetProps> = ({ currentUser }) => {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await googleSignIn();
-      if (result) {
-        setToken(result.accessToken);
-        setGoogleUser(result.user);
-        await loadEmails(result.accessToken);
-      }
+      const { error } = await connectGoogleViaSupabase(GOOGLE_WORKSPACE_SCOPES.GMAIL);
+      if (error) setError(error.message);
     } catch (err: any) {
-      console.error('Google Sign In Error:', err);
-      setError(err.message || 'Google authorization was cancelled or failed.');
+      setError(err.message || 'Supabase Gmail authorization failed.');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleDisconnect = async () => {
-    await logoutGoogle();
+    disconnectGoogleWorkspaceToken();
     setToken(null);
     setGoogleUser(null);
     setEmails([]);

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { StaffMember, Role, StaffPermissions } from '../types';
+import { StaffMember, Role, StaffPermissions, EmployeeAccessRequest } from '../types';
+import EmployeeAccessControl from './EmployeeAccessControl';
 import { 
   ShieldCheck, ShieldAlert, Lock, Unlock, Eye, EyeOff, Users, 
   Briefcase, DollarSign, Mail, HardDrive, Calendar, Search, 
   Filter, Check, AlertTriangle, RefreshCw, Sparkles, UserCheck, 
-  SlidersHorizontal, CheckCircle2, XCircle, Info, Target
+  SlidersHorizontal, CheckCircle2, XCircle, Info, Target, KeyRound
 } from 'lucide-react';
 
 interface AccessManagementProps {
@@ -12,18 +13,27 @@ interface AccessManagementProps {
   onUpdateStaffPermissions: (staffId: string, permissions: StaffPermissions) => void;
   currentUser: StaffMember;
   departments: string[];
+  requests?: EmployeeAccessRequest[];
+  onRefreshData?: () => Promise<void>;
+  onUpdateStaffList?: (updatedList: StaffMember[]) => void;
 }
 
 const AccessManagement: React.FC<AccessManagementProps> = ({
   staffList,
   onUpdateStaffPermissions,
   currentUser,
-  departments
+  departments,
+  requests = [],
+  onRefreshData,
+  onUpdateStaffList
 }) => {
+  const [mainTab, setMainTab] = useState<'access_control' | 'permissions_matrix'>('access_control');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDepartment, setFilterDepartment] = useState('ALL');
   const [filterRole, setFilterRole] = useState('ALL');
   const [activePresetMessage, setActivePresetMessage] = useState<string | null>(null);
+
+  const pendingRequestsCount = requests.filter(r => r.status === 'pending').length;
 
   // Filter staff
   const filteredStaff = staffList.filter(s => {
@@ -86,8 +96,52 @@ const AccessManagement: React.FC<AccessManagementProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="bg-[#0e0f14] border border-neutral-800 p-6 rounded-sm relative overflow-hidden">
+      {/* Top Tab Switcher */}
+      <div className="flex items-center gap-2 border-b border-neutral-800 pb-3">
+        <button
+          type="button"
+          onClick={() => setMainTab('access_control')}
+          className={`flex items-center gap-2 px-4 py-2 font-mono text-xs uppercase font-bold tracking-wider rounded-sm transition-all cursor-pointer ${
+            mainTab === 'access_control'
+              ? 'bg-white text-black shadow-md'
+              : 'bg-[#101216] text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700'
+          }`}
+        >
+          <UserCheck size={14} />
+          <span>Employee Access Control</span>
+          {pendingRequestsCount > 0 && (
+            <span className="px-1.5 py-0.5 bg-amber-500 text-black font-black text-[9px] rounded-full animate-pulse">
+              {pendingRequestsCount} PENDING
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMainTab('permissions_matrix')}
+          className={`flex items-center gap-2 px-4 py-2 font-mono text-xs uppercase font-bold tracking-wider rounded-sm transition-all cursor-pointer ${
+            mainTab === 'permissions_matrix'
+              ? 'bg-white text-black shadow-md'
+              : 'bg-[#101216] text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700'
+          }`}
+        >
+          <SlidersHorizontal size={14} />
+          <span>Roles & Permissions Matrix</span>
+        </button>
+      </div>
+
+      {mainTab === 'access_control' ? (
+        <EmployeeAccessControl
+          requests={requests}
+          staffList={staffList}
+          currentUser={currentUser}
+          onRefreshData={onRefreshData || (async () => {})}
+          onUpdateStaffList={onUpdateStaffList || (() => {})}
+        />
+      ) : (
+        <div className="space-y-6">
+          {/* Header Banner */}
+          <div className="bg-[#0e0f14] border border-neutral-800 p-6 rounded-sm relative overflow-hidden">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="font-mono text-[9px] text-amber-400 uppercase tracking-[0.25em] flex items-center gap-2">
@@ -366,6 +420,8 @@ const AccessManagement: React.FC<AccessManagementProps> = ({
         </div>
       </div>
     </div>
+  )}
+</div>
   );
 };
 

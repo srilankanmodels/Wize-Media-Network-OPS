@@ -12,11 +12,7 @@ import {
   deleteCalendarEvent, 
   GoogleCalendarEvent 
 } from '../utils/googleCalendarService';
-import { 
-  googleSignIn, 
-  logoutGoogle, 
-  initAuth 
-} from '../firebase';
+import { supabase, isSupabaseEnabled, connectGoogleViaSupabase, disconnectGoogleWorkspaceToken, GOOGLE_WORKSPACE_SCOPES } from '../supabase';
 
 interface MonthlyCalendarProps {
   events: CalendarEvent[];
@@ -51,6 +47,8 @@ const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
   const [googleEvents, setGoogleEvents] = useState<GoogleCalendarEvent[]>([]);
   const [isLoadingGoogle, setIsLoadingGoogle] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [manualTokenInput, setManualTokenInput] = useState('');
 
   // Destructive delete confirmation modal (per workspace integration skill)
   const [eventToDelete, setEventToDelete] = useState<{ id: string; title: string; isGoogle: boolean } | null>(null);
@@ -74,22 +72,50 @@ const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
-  // Initialize Auth listener for Google Calendar
+  // Restore Google Token on initial load (from SessionStorage or Supabase OAuth)
   useEffect(() => {
-    const unsubscribe = initAuth(
-      (user, cachedToken) => {
-        setGoogleUser(user);
-        setToken(cachedToken);
-        loadGoogleEvents(cachedToken, currentDate);
-      },
-      () => {
-        setGoogleUser(null);
-        setToken(null);
+    const cachedTok = sessionStorage.getItem('mw_google_calendar_token');
+    const cachedEmail = sessionStorage.getItem('mw_google_calendar_email');
+    if (cachedTok) {
+      setToken(cachedTok);
+      if (cachedEmail) setGoogleUser({ email: cachedEmail });
+      loadGoogleEvents(cachedTok, currentDate);
+      return;
+    }
+
+    if (isSupabaseEnabled && supabase) {
+      supabase.auth.getSession().then(({ data }) => {
+        if (data?.session?.provider_token) {
+          const tok = data.session.provider_token;
+          setToken(tok);
+          const email = data.session.user.email || 'Office Account';
+          setGoogleUser({ email, displayName: data.session.user.user_metadata?.full_name });
+          sessionStorage.setItem('mw_google_calendar_token', tok);
+          sessionStorage.setItem('mw_google_calendar_email', email);
+          loadGoogleEvents(tok, currentDate);
+        }
+      }).catch(err => console.debug('Supabase session provider_token check:', err));
+    }
+  }, []);
+
+  // Initialize Supabase Auth listener for Google Workspace session
+  useEffect(() => {
+    if (!isSupabaseEnabled || !supabase) return;
+
+    const { data: authSub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.provider_token) {
+        const tok = session.provider_token;
+        const email = session.user?.email || 'Office Account';
+        setToken(tok);
+        setGoogleUser({ email, displayName: session.user?.user_metadata?.full_name });
+        sessionStorage.setItem('mw_google_calendar_token', tok);
+        sessionStorage.setItem('mw_google_calendar_email', email);
+        loadGoogleEvents(tok, currentDate);
       }
-    );
+    });
 
     return () => {
-      if (typeof unsubscribe === 'function') unsubscribe();
+      authSub?.subscription.unsubscribe();
     };
   }, []);
 
@@ -104,6 +130,7 @@ const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
     } catch (err: any) {
       if (err.message === 'TOKEN_EXPIRED') {
         setToken(null);
+        disconnectGoogleWorkspaceToken();
         setGoogleError('Google Workspace session expired. Please reconnect.');
       } else {
         setGoogleError(err.message || 'Failed to fetch Google Calendar events.');
@@ -114,25 +141,46 @@ const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
   };
 
   const handleConnectGoogle = async () => {
+    await handleConnectViaSupabase();
+  };
+
+  const handleConnectViaSupabase = async () => {
     setIsLoadingGoogle(true);
     setGoogleError(null);
     try {
-      const result = await googleSignIn();
-      if (result) {
-        setToken(result.accessToken);
-        setGoogleUser(result.user);
-        await loadGoogleEvents(result.accessToken, currentDate);
+      const { error } = await connectGoogleViaSupabase(GOOGLE_WORKSPACE_SCOPES.CALENDAR);
+      if (error) {
+        setGoogleError(error.message);
       }
     } catch (err: any) {
-      console.error('Google Sign In Error:', err);
-      setGoogleError(err.message || 'Google authorization was cancelled or failed.');
+      setGoogleError(err.message || 'Supabase Google Calendar authentication failed.');
+    } finally {
+      setIsLoadingGoogle(false);
+    }
+  };
+
+  const handleConnectWithManualToken = async () => {
+    if (!manualTokenInput.trim()) return;
+    setIsLoadingGoogle(true);
+    setGoogleError(null);
+    try {
+      const cleanTok = manualTokenInput.trim();
+      await loadGoogleEvents(cleanTok, currentDate);
+      setToken(cleanTok);
+      setGoogleUser({ email: 'Office Workspace Account' });
+      sessionStorage.setItem('mw_google_calendar_token', cleanTok);
+      sessionStorage.setItem('mw_google_calendar_email', 'Office Workspace Account');
+      setIsConnectModalOpen(false);
+      setManualTokenInput('');
+    } catch (err: any) {
+      setGoogleError(err.message || 'Invalid access token. Please verify Calendar permissions.');
     } finally {
       setIsLoadingGoogle(false);
     }
   };
 
   const handleDisconnectGoogle = async () => {
-    await logoutGoogle();
+    disconnectGoogleWorkspaceToken();
     setToken(null);
     setGoogleUser(null);
     setGoogleEvents([]);
@@ -1028,6 +1076,133 @@ const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
               >
                 {isDeleting ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
                 Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GOOGLE CALENDAR CONNECT / AUTH MODAL */}
+      {isConnectModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0b0c0f] border border-neutral-800 rounded-sm w-full max-w-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="p-6 bg-[#0e0f14] border-b border-neutral-800 flex justify-between items-center text-white">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-sm bg-[#14151c] border border-neutral-700 flex items-center justify-center text-white">
+                  <CalendarIcon size={18} />
+                </div>
+                <div>
+                  <div className="font-mono text-[9px] text-neutral-400 uppercase tracking-widest flex items-center gap-2">
+                    <span>OFFICE WORKSPACE SYNC</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                  </div>
+                  <h3 className="text-base font-black uppercase text-white font-heading">
+                    Connect Google Calendar
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsConnectModalOpen(false);
+                  setGoogleError(null);
+                }}
+                className="text-neutral-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto custom-scrollbar font-sans">
+              <p className="text-xs text-neutral-300 leading-relaxed font-mono">
+                Connect your corporate Google Workspace or personal Google Calendar to synchronize deadlines, production shoots, client reviews, and Google Meet video links directly with the MEDIAWIZE OPS matrix.
+              </p>
+
+              {googleError && (
+                <div className="p-3 bg-rose-950/40 border border-rose-500/40 rounded-sm space-y-2">
+                  <div className="flex items-center gap-2 text-rose-300 text-xs font-mono font-bold">
+                    <AlertCircle size={15} className="text-rose-400 shrink-0" />
+                    <span>AUTHENTICATION NOTICE</span>
+                  </div>
+                  <p className="text-[11px] font-mono text-rose-200/90 leading-relaxed whitespace-pre-wrap">
+                    {googleError}
+                  </p>
+                </div>
+              )}
+
+              {/* Method 1: Supabase Google OAuth (Recommended) */}
+              <div className="p-4 bg-[#12141a] border border-neutral-800 hover:border-neutral-700 rounded-sm transition-all space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[9px] px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 uppercase rounded-xs font-bold">
+                        RECOMMENDED
+                      </span>
+                      <h4 className="text-xs font-bold font-mono uppercase text-white">
+                        Connect via Supabase OAuth
+                      </h4>
+                    </div>
+                    <p className="text-[11px] font-mono text-neutral-400 mt-1">
+                      Direct authorization through your connected Supabase backend ({isSupabaseEnabled ? 'Online' : 'Disabled'}).
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleConnectViaSupabase}
+                  disabled={isLoadingGoogle}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-black font-mono font-black text-xs uppercase tracking-wider rounded-sm transition-all active:scale-[0.99] cursor-pointer"
+                >
+                  <ShieldCheck size={14} />
+                  <span>{isLoadingGoogle ? 'Connecting OAuth...' : 'Authorize via Supabase Google OAuth'}</span>
+                </button>
+              </div>
+
+              {/* Method 2: Direct Access Token */}
+              <div className="p-4 bg-[#12141a] border border-neutral-800 rounded-sm space-y-3">
+                <div>
+                  <h4 className="text-xs font-bold font-mono uppercase text-white">
+                    Direct Google OAuth Access Token
+                  </h4>
+                  <p className="text-[11px] font-mono text-neutral-400 mt-1">
+                    Paste an active Google Calendar OAuth token (e.g. from Google OAuth 2.0 Playground or Workspace Admin Service Account).
+                  </p>
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder="ya29.a0AfH6SMC..."
+                    value={manualTokenInput}
+                    onChange={e => setManualTokenInput(e.target.value)}
+                    className="flex-1 px-3 py-2 bg-[#0a0b0e] border border-neutral-800 font-mono text-xs text-white outline-none focus:border-white rounded-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleConnectWithManualToken}
+                    disabled={!manualTokenInput.trim() || isLoadingGoogle}
+                    className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-white font-mono text-xs uppercase font-bold rounded-sm transition-colors cursor-pointer"
+                  >
+                    Link Token
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-[#0e0f14] border-t border-neutral-800 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsConnectModalOpen(false);
+                  setGoogleError(null);
+                }}
+                className="px-4 py-2 font-mono text-xs text-neutral-400 hover:text-white uppercase cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>
