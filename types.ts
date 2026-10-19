@@ -360,3 +360,23 @@ export interface Procedure {
   tags?: string[];
 }
 
+// JARVIS Liquid Glass Theme Configuration
+export type JarvisPresetId = 'arc-cyan' | 'mark-crimson' | 'friday-emerald' | 'veronica-violet' | 'solar-amber' | 'stealth-chrome' | 'custom';
+
+export interface JarvisThemeConfig {
+  presetId: JarvisPresetId;
+  name: string;
+  tagline: string;
+  primaryAccent: string; // e.g. #00f0ff
+  secondaryAccent: string; // e.g. #0284c7
+  bgDark: string; // background base e.g. #05070e
+  glassBlur: 'subtle' | 'liquid' | 'deep'; // 12px, 20px, 32px
+  glowIntensity: 'subtle' | 'medium' | 'high'; // low, medium, ultra
+  glassOpacity: number; // 0.65 to 0.95
+  ambientOrbs: boolean;
+  audioFeedback: boolean;
+  scanlineEffect: boolean;
+  hudBorders: boolean;
+}
+
+

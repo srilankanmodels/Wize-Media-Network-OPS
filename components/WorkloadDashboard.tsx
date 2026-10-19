@@ -267,40 +267,40 @@ const WorkloadDashboard: React.FC<WorkloadDashboardProps> = ({
         </div>
       )}
 
-      {/* Header Banner */}
-      <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-8 sm:p-10 relative overflow-hidden">
+      {/* Header Banner - Liquid Glass */}
+      <div className="liquid-glass-card hud-frame rounded-sm p-8 sm:p-10 relative overflow-hidden shadow-[0_0_40px_-10px_rgba(var(--jarvis-primary-rgb),0.2)]">
         <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 relative z-10">
           <div>
-            <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-[0.25em] mb-2 flex items-center gap-2">
-              <Target size={13} className="text-emerald-400" />
-              <span>CAPACITY COORDINATOR // RESOURCE ALLOCATION</span>
+            <div className="font-mono text-[10px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] mb-2 flex items-center gap-2">
+              <Target size={13} className="text-[var(--jarvis-primary)]" />
+              <span>CAPACITY COORDINATOR // RESOURCE ALLOCATION // JARVIS MATRIX</span>
             </div>
             <h1 className="text-3xl sm:text-5xl font-black text-white uppercase tracking-tight font-heading">
-              WORKLOAD <span className="text-neutral-500">DASHBOARD</span>
+              WORKLOAD <span className="text-[var(--jarvis-primary)] hud-glow-text">DASHBOARD</span>
             </h1>
-            <p className="text-neutral-400 text-xs font-mono uppercase tracking-wider mt-2.5 max-w-2xl leading-relaxed">
+            <p className="text-neutral-300 text-xs font-mono uppercase tracking-wider mt-2.5 max-w-2xl leading-relaxed">
               Real-time individual task distribution, copywriter & designer capacity balancing, and agile reallocation protocols.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="px-5 py-3 bg-[#12141a] border border-neutral-800 rounded-sm font-mono text-left">
-              <div className="text-[9px] text-neutral-400 uppercase tracking-widest">ACTIVE DIRECTIVES</div>
-              <div className="text-2xl font-black text-white leading-none mt-1">{totalActiveTasksCount}</div>
+            <div className="px-5 py-3 bg-black/50 border border-[var(--jarvis-border)] rounded-sm font-mono text-left shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.15)]">
+              <div className="text-[9px] text-[var(--jarvis-primary)] uppercase tracking-widest font-bold">ACTIVE DIRECTIVES</div>
+              <div className="text-2xl font-black text-white leading-none mt-1 font-mono">{totalActiveTasksCount}</div>
             </div>
 
-            <div className="px-5 py-3 bg-[#12141a] border border-neutral-800 rounded-sm font-mono text-left">
-              <div className="text-[9px] text-rose-400 uppercase tracking-widest flex items-center gap-1">
+            <div className="px-5 py-3 bg-black/50 border border-rose-500/40 rounded-sm font-mono text-left shadow-[0_0_12px_rgba(244,63,94,0.2)]">
+              <div className="text-[9px] text-rose-400 uppercase tracking-widest flex items-center gap-1 font-bold">
                 <Flame size={10} /> HEAVY LOAD
               </div>
-              <div className="text-2xl font-black text-rose-400 leading-none mt-1">{overloadedCount}</div>
+              <div className="text-2xl font-black text-rose-400 leading-none mt-1 font-mono">{overloadedCount}</div>
             </div>
 
-            <div className="px-5 py-3 bg-[#12141a] border border-neutral-800 rounded-sm font-mono text-left">
-              <div className="text-[9px] text-emerald-400 uppercase tracking-widest flex items-center gap-1">
+            <div className="px-5 py-3 bg-black/50 border border-emerald-500/40 rounded-sm font-mono text-left shadow-[0_0_12px_rgba(16,185,129,0.2)]">
+              <div className="text-[9px] text-emerald-400 uppercase tracking-widest flex items-center gap-1 font-bold">
                 <Zap size={10} /> AVAILABLE
               </div>
-              <div className="text-2xl font-black text-emerald-400 leading-none mt-1">{availableCount}</div>
+              <div className="text-2xl font-black text-emerald-400 leading-none mt-1 font-mono">{availableCount}</div>
             </div>
           </div>
         </div>

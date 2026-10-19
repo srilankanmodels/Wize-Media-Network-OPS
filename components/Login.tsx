@@ -30,20 +30,32 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#060709] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden bg-grid-pattern selection:bg-white selection:text-black">
+    <div className="min-h-screen bg-[var(--jarvis-bg-dark)] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden bg-grid-pattern selection:bg-white selection:text-black">
+      {/* Liquid Ambient Orbs */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div 
+          className="absolute -top-32 -left-32 w-[550px] h-[550px] rounded-full blur-[120px] opacity-25 animate-orb-1"
+          style={{ background: `radial-gradient(circle, var(--jarvis-primary) 0%, transparent 70%)` }}
+        />
+        <div 
+          className="absolute -bottom-32 -right-32 w-[550px] h-[550px] rounded-full blur-[130px] opacity-20 animate-orb-2"
+          style={{ background: `radial-gradient(circle, var(--jarvis-secondary) 0%, transparent 70%)` }}
+        />
+      </div>
       
-      <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm shadow-2xl w-full max-w-md overflow-hidden z-10 relative">
+      <div className="liquid-glass-card hud-frame rounded-sm shadow-[0_0_60px_-10px_rgba(var(--jarvis-primary-rgb),0.35)] w-full max-w-md overflow-hidden z-10 relative">
         
         {/* Header */}
-        <div className="bg-[#0e0f14] p-8 text-center border-b border-neutral-800 relative overflow-hidden">
-          <div className="font-mono text-[9px] text-neutral-400 uppercase tracking-[0.25em] mb-3">
-            PROPRIETARY ECOSYSTEM // V4.0.2
+        <div className="bg-black/40 p-8 text-center border-b border-[var(--jarvis-border)] relative overflow-hidden">
+          <div className="font-mono text-[9px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] mb-3 flex items-center justify-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
+            <span>JARVIS SYSTEM MATRIX // V4.0.2</span>
           </div>
           <div className="flex items-center justify-center gap-2 mb-2">
             <span className="font-black text-2xl uppercase tracking-tight text-white font-heading">MEDIAWIZE</span>
-            <span className="font-light text-2xl uppercase tracking-widest text-neutral-400">OPS</span>
+            <span className="font-light text-2xl uppercase tracking-widest text-[var(--jarvis-primary)] hud-glow-text">OPS</span>
           </div>
-          <p className="font-mono text-xs text-neutral-400 uppercase tracking-wider">
+          <p className="font-mono text-xs text-neutral-300 uppercase tracking-wider">
             Autonomous Creative Workflow Engine
           </p>
         </div>
@@ -52,16 +64,16 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
         <div className="p-8 space-y-6">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block font-mono text-[10px] text-neutral-400 uppercase tracking-widest mb-1.5">
+              <label className="block font-mono text-[10px] text-neutral-300 uppercase tracking-widest mb-1.5">
                 Work Email Address
               </label>
               <div className="relative">
-                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 w-4 h-4" />
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--jarvis-primary)] w-4 h-4 opacity-80" />
                 <input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-[#12141a] border border-neutral-800 focus:border-white font-mono text-xs text-white rounded-sm outline-none transition-colors placeholder:text-neutral-600"
+                  className="w-full pl-10 pr-4 py-2.5 bg-black/50 border border-[var(--jarvis-border)] focus:border-[var(--jarvis-primary)] font-mono text-xs text-white rounded-sm outline-none transition-all placeholder:text-neutral-500 shadow-inner"
                   placeholder="name@mediawize.lk"
                   required
                 />
@@ -69,16 +81,16 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
             </div>
             
             <div>
-              <label className="block font-mono text-[10px] text-neutral-400 uppercase tracking-widest mb-1.5">
+              <label className="block font-mono text-[10px] text-neutral-300 uppercase tracking-widest mb-1.5">
                 Secure Access Key
               </label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-500 w-4 h-4" />
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--jarvis-primary)] w-4 h-4 opacity-80" />
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-[#12141a] border border-neutral-800 focus:border-white font-mono text-xs text-white rounded-sm outline-none transition-colors placeholder:text-neutral-600"
+                  className="w-full pl-10 pr-4 py-2.5 bg-black/50 border border-[var(--jarvis-border)] focus:border-[var(--jarvis-primary)] font-mono text-xs text-white rounded-sm outline-none transition-all placeholder:text-neutral-500 shadow-inner"
                   placeholder="••••••••"
                   required
                 />
@@ -86,14 +98,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
             </div>
 
             {error && (
-              <div className="font-mono text-[10px] bg-rose-500/10 border border-rose-500/30 text-rose-400 p-2.5 text-center uppercase tracking-wider">
+              <div className="font-mono text-[10px] bg-rose-500/10 border border-rose-500/40 text-rose-300 p-2.5 text-center uppercase tracking-wider">
                 {error}
               </div>
             )}
 
             <button
               type="submit"
-              className="w-full bg-white text-black hover:bg-neutral-200 font-black font-mono text-xs uppercase tracking-wider py-3 rounded-sm flex items-center justify-center gap-2 transition-all shadow-md active:scale-95"
+              className="w-full jarvis-btn-primary font-black font-mono text-xs uppercase tracking-wider py-3 rounded-sm flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg active:scale-95"
             >
               Sign In to Workspace <ArrowRight className="w-4 h-4" />
             </button>

@@ -107,11 +107,11 @@ const Dashboard: React.FC<DashboardProps> = ({
   // Rule: Projects should only be visible to admins, managers, AEs and Finance
   const canViewProjects = isSuperAdmin || isAdmin || isGM || isManager || isAE || isAccounts || !!currentUser.permissions?.canViewProjects;
 
-  // Rule: New campaign can be created only by AE / managers / admins / super admins / general managers
-  const canCreateCampaign = isSuperAdmin || isAdmin || isGM || isManager || isAE;
+  // Rule: New campaign can be created ONLY by Super Admin and Admin
+  const canCreateCampaign = isSuperAdmin || isAdmin;
 
-  // Rule: Hero management buttons displayed only for managers / admins / super admins / general managers
-  const canViewManagerButtons = isSuperAdmin || isAdmin || isGM || isManager;
+  // Rule: Hero management buttons (Simulator directives) displayed ONLY for Super Admin and Admin
+  const canViewManagerButtons = isSuperAdmin || isAdmin;
 
   // Rule: Workload dashboard access for AE / managers / admins / super admins / general managers
   const canAccessWorkload = isSuperAdmin || isAdmin || isGM || isManager || isAE || !!currentUser.permissions?.canViewWorkload;
@@ -269,15 +269,15 @@ const Dashboard: React.FC<DashboardProps> = ({
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 animate-in fade-in duration-500">
       
-      {/* Precision Module Navigation Bar on Dashboard */}
-      <div className="flex flex-wrap items-center justify-between gap-4 p-2 bg-[#090a0d] border border-neutral-800 rounded-sm">
+      {/* Precision Module Navigation Bar on Dashboard - Liquid Glass */}
+      <div className="flex flex-wrap items-center justify-between gap-4 p-2.5 liquid-glass rounded-sm">
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setDashboardTab('telemetry')}
             className={`px-4 py-2.5 rounded-sm font-mono text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer ${
               dashboardTab === 'telemetry'
-                ? 'bg-white text-black font-black shadow-md'
-                : 'bg-transparent text-neutral-400 hover:text-white hover:bg-[#12141c]'
+                ? 'jarvis-btn-primary shadow-md'
+                : 'bg-transparent text-neutral-400 hover:text-white hover:bg-[rgba(255,255,255,0.06)]'
             }`}
           >
             <Activity size={14} /> 01 // PULSE TELEMETRY
@@ -286,8 +286,8 @@ const Dashboard: React.FC<DashboardProps> = ({
             onClick={() => setDashboardTab('gmail')}
             className={`px-4 py-2.5 rounded-sm font-mono text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer border ${
               dashboardTab === 'gmail'
-                ? 'bg-rose-600 text-white font-black border-rose-500 shadow-md'
-                : 'bg-transparent text-neutral-400 hover:text-rose-400 border-transparent hover:bg-[#12141c]'
+                ? 'bg-rose-600 text-white font-black border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.5)]'
+                : 'bg-transparent text-neutral-400 hover:text-rose-400 border-transparent hover:bg-[rgba(255,255,255,0.06)]'
             }`}
           >
             <Mail size={14} /> 02 // MY WORKSPACE GMAIL
@@ -296,8 +296,8 @@ const Dashboard: React.FC<DashboardProps> = ({
             onClick={() => setDashboardTab('calendar')}
             className={`px-4 py-2.5 rounded-sm font-mono text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer border ${
               dashboardTab === 'calendar'
-                ? 'bg-indigo-600 text-white font-black border-indigo-500 shadow-md'
-                : 'bg-transparent text-neutral-400 hover:text-indigo-400 border-transparent hover:bg-[#12141c]'
+                ? 'bg-indigo-600 text-white font-black border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.5)]'
+                : 'bg-transparent text-neutral-400 hover:text-indigo-400 border-transparent hover:bg-[rgba(255,255,255,0.06)]'
             }`}
           >
             <Calendar size={14} /> 03 // GOOGLE & MONTHLY CALENDAR
@@ -306,17 +306,17 @@ const Dashboard: React.FC<DashboardProps> = ({
             onClick={() => setDashboardTab('drive')}
             className={`px-4 py-2.5 rounded-sm font-mono text-xs uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer border ${
               dashboardTab === 'drive'
-                ? 'bg-sky-600 text-white font-black border-sky-500 shadow-md'
-                : 'bg-transparent text-neutral-400 hover:text-sky-400 border-transparent hover:bg-[#12141c]'
+                ? 'bg-sky-600 text-white font-black border-sky-500 shadow-[0_0_15px_rgba(14,165,233,0.5)]'
+                : 'bg-transparent text-neutral-400 hover:text-sky-400 border-transparent hover:bg-[rgba(255,255,255,0.06)]'
             }`}
           >
             <HardDrive size={14} /> 04 // GOOGLE DRIVE VAULT
           </button>
         </div>
 
-        <div className="flex items-center gap-3 px-3 py-1.5 bg-[#12141c] border border-neutral-800 rounded-sm font-mono text-[10px] text-neutral-400">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>USER NODE: <strong className="text-white uppercase">{currentUser.name}</strong> ({currentUser.role} // {currentUser.department})</span>
+        <div className="flex items-center gap-3 px-3.5 py-1.5 bg-black/40 border border-[var(--jarvis-border)] rounded-sm font-mono text-[10px] text-neutral-300">
+          <span className="w-2 h-2 rounded-full bg-[var(--jarvis-primary)] animate-pulse shadow-[0_0_8px_var(--jarvis-primary)]" />
+          <span>USER NODE: <strong className="text-white uppercase">{currentUser.name}</strong> (<span className="text-[var(--jarvis-primary)]">{currentUser.role}</span> // {currentUser.department})</span>
         </div>
       </div>
 
@@ -413,135 +413,146 @@ const Dashboard: React.FC<DashboardProps> = ({
             </div>
           )}
 
-          {/* 1. HERO BLOCK: Exact match of Screenshot */}
-          <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-8 sm:p-12 relative overflow-hidden">
-        {/* Giant faint watermark in background */}
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-[100px] sm:text-[180px] lg:text-[240px] text-white/[0.03] select-none uppercase tracking-tighter pointer-events-none font-heading leading-none">
-          DISRUPT
-        </div>
+          {/* 1. HERO BLOCK: JARVIS Liquid Glass HUD */}
+          <div className="liquid-glass-card hud-frame rounded-sm p-8 sm:p-12 relative overflow-hidden shadow-[0_0_50px_-10px_rgba(var(--jarvis-primary-rgb),0.25)]">
+            {/* Ambient liquid subtle sheen */}
+            <div className="absolute -top-24 -right-24 w-96 h-96 bg-[radial-gradient(circle,rgba(var(--jarvis-primary-rgb),0.18)_0%,transparent_70%)] pointer-events-none blur-3xl animate-pulse" />
+            <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-[radial-gradient(circle,rgba(var(--jarvis-secondary-rgb),0.15)_0%,transparent_70%)] pointer-events-none blur-3xl" />
+            
+            {/* Giant faint watermark in background */}
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-[100px] sm:text-[180px] lg:text-[240px] text-white/[0.03] select-none uppercase tracking-tighter pointer-events-none font-heading leading-none">
+              DISRUPT
+            </div>
 
-        <div className="relative z-10 max-w-3xl">
-          <div className="font-mono text-xs uppercase tracking-[0.25em] text-neutral-400 mb-4 flex items-center gap-2">
-            <span>PROPRIETARY ECOSYSTEM // CREATIVE OPS SWARM</span>
+            <div className="relative z-10 max-w-3xl">
+              <div className="font-mono text-xs uppercase tracking-[0.25em] text-[var(--jarvis-primary)] mb-4 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
+                <span className="font-bold">PROPRIETARY ECOSYSTEM // CREATIVE OPS SWARM // JARVIS HUD</span>
+              </div>
+
+              <h1 className="text-4xl sm:text-6xl md:text-7xl font-black text-white tracking-tight uppercase leading-none font-heading">
+                MEDIAWIZE
+                <span className="block text-[var(--jarvis-primary)] font-bold mt-2 hud-glow-text">CREATIVE OPS</span>
+              </h1>
+
+              <p className="text-xs sm:text-sm text-neutral-300 font-medium uppercase tracking-wider max-w-2xl mt-6 leading-relaxed">
+                IMMERSIVE SPATIAL ADVERTISING, ANNUAL REPORTS & MULTI-CHANNEL CAMPAIGN ENGINE. AUTONOMOUS CREATIVE DIRECTIVES COORDINATE STRATEGY, PRODUCTION LOGIC, AND REAL-TIME BUDGET ATTRIBUTION.
+              </p>
+
+              <div className="flex flex-wrap items-center gap-4 mt-8">
+                {canCreateCampaign && (
+                  <button
+                    onClick={onNewProject}
+                    className="jarvis-btn-primary px-7 py-3.5 font-black text-xs uppercase tracking-wider flex items-center gap-2.5 rounded-sm active:scale-95 transition-all cursor-pointer group"
+                    title="Initialize New Campaign"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-black animate-pulse" />
+                    <Plus size={16} strokeWidth={3} />
+                    <span>NEW CAMPAIGN</span>
+                  </button>
+                )}
+
+                {canViewManagerButtons && (
+                  <button
+                    onClick={() => setIsMyTasksOpen(true)}
+                    className="jarvis-btn-secondary px-7 py-3.5 font-bold text-xs uppercase tracking-wider flex items-center gap-2.5 rounded-sm active:scale-95 transition-all cursor-pointer group"
+                    title="Launch Directives Simulator"
+                  >
+                    <Eye size={16} className="text-[var(--jarvis-primary)] group-hover:scale-110 transition-transform" />
+                    <span>OPEN SIMULATOR ({currentUserTasks.length} DIRECTIVES)</span>
+                  </button>
+                )}
+
+                {canAccessWorkload && onNavigateToWorkload && (
+                  <button
+                    onClick={onNavigateToWorkload}
+                    className="px-6 py-3.5 rounded-sm font-mono text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer bg-[rgba(var(--jarvis-secondary-rgb),0.12)] border border-[var(--jarvis-border)] text-[var(--jarvis-primary)] hover:border-[var(--jarvis-primary)] hover:bg-[rgba(var(--jarvis-secondary-rgb),0.22)] shadow-[0_0_15px_-3px_rgba(var(--jarvis-secondary-rgb),0.3)]"
+                  >
+                    <Target size={15} /> WORKLOAD BALANCER
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-black text-white tracking-tight uppercase leading-none font-heading">
-            MEDIAWIZE
-            <span className="block text-[#52525b] font-bold mt-2">CREATIVE OPS</span>
-          </h1>
-
-          <p className="text-xs sm:text-sm text-neutral-300 font-medium uppercase tracking-wider max-w-2xl mt-6 leading-relaxed">
-            IMMERSIVE SPATIAL ADVERTISING, ANNUAL REPORTS & MULTI-CHANNEL CAMPAIGN ENGINE. AUTONOMOUS CREATIVE DIRECTIVES COORDINATE STRATEGY, PRODUCTION LOGIC, AND REAL-TIME BUDGET ATTRIBUTION.
-          </p>
-
-          <div className="flex flex-wrap items-center gap-4 mt-8">
-            {canCreateCampaign && (
-              <button
-                onClick={onNewProject}
-                className="bg-white text-black hover:bg-neutral-200 px-6 py-3 font-black text-xs uppercase tracking-wider flex items-center gap-2 rounded-sm shadow-xl active:scale-95 transition-all cursor-pointer"
-              >
-                <Plus size={16} strokeWidth={3} /> NEW CAMPAIGN
-              </button>
-            )}
-
-            {canViewManagerButtons && (
-              <button
-                onClick={() => setIsMyTasksOpen(true)}
-                className="bg-[#12141a] border border-neutral-700 text-white hover:bg-neutral-800 px-6 py-3 font-black text-xs uppercase tracking-wider flex items-center gap-2 rounded-sm active:scale-95 transition-all cursor-pointer"
-              >
-                <Eye size={16} /> OPEN SIMULATOR ({currentUserTasks.length} DIRECTIVES)
-              </button>
-            )}
-
-            {canAccessWorkload && onNavigateToWorkload && (
-              <button
-                onClick={onNavigateToWorkload}
-                className="bg-[#12141a] border border-emerald-500/40 text-emerald-300 hover:bg-emerald-950/40 hover:border-emerald-400 px-6 py-3 font-black text-xs uppercase tracking-wider flex items-center gap-2 rounded-sm active:scale-95 transition-all cursor-pointer"
-              >
-                <Target size={15} className="text-emerald-400" /> WORKLOAD BALANCER
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 2. STRATEGY COORDINATOR // POSITIONING MATRIX: Exact match of Screenshot */}
-      <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-8 sm:p-10 relative overflow-hidden">
+      {/* 2. STRATEGY COORDINATOR // POSITIONING MATRIX: JARVIS Liquid Glass */}
+      <div className="liquid-glass-card hud-frame rounded-sm p-8 sm:p-10 relative overflow-hidden">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
-            <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-[0.25em] mb-1">
-              STRATEGY COORDINATOR // POSITIONING MATRIX
+            <div className="font-mono text-[10px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] mb-1 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-pulse" />
+              <span>STRATEGY COORDINATOR // POSITIONING MATRIX</span>
             </div>
             <h2 className="text-xl sm:text-3xl font-black text-white uppercase tracking-tight font-heading">
               UNMASK TRUE REVENUE ATTRIBUTION
             </h2>
           </div>
           <div className="self-start sm:self-auto">
-            <span className="px-3.5 py-1.5 bg-white text-black font-black text-[10px] uppercase tracking-wider rounded-none shadow-sm">
-              TONE: PROFESSIONAL B2B
+            <span className="px-3.5 py-1.5 bg-[var(--jarvis-primary)] text-black font-black text-[10px] uppercase tracking-wider rounded-none shadow-[0_0_15px_rgba(var(--jarvis-primary-rgb),0.4)]">
+              TONE: PROFESSIONAL B2B // HUD ACTIVE
             </span>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-[#101217] border border-neutral-800/80 p-6 rounded-sm flex flex-col justify-between">
+          <div className="bg-black/40 border border-[var(--jarvis-border)] p-6 rounded-sm flex flex-col justify-between hover:border-[var(--jarvis-primary)] transition-all">
             <div>
-              <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-[0.25em] mb-3">
+              <div className="font-mono text-[10px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] mb-3">
                 01 // CORE VALUE PROPOSITION
               </div>
               <p className="text-xs sm:text-sm text-neutral-200 font-medium leading-relaxed">
                 Stop guessing which marketing channels drive pipeline. Mediawize Pulse connects creative output to actual client revenue in real-time.
               </p>
             </div>
-            <div className="mt-5 pt-4 border-t border-neutral-800/60 flex items-center justify-between font-mono text-xs">
+            <div className="mt-5 pt-4 border-t border-neutral-800/80 flex items-center justify-between font-mono text-xs">
               <span className="text-neutral-400">LIQUID FLOAT:</span>
               <span className="font-black text-white">{canViewFinance ? `LKR ${balance.toLocaleString()}` : '[RESTRICTED - FINANCE ONLY]'}</span>
             </div>
           </div>
 
-          <div className="bg-[#101217] border border-neutral-800/80 p-6 rounded-sm flex flex-col justify-between">
+          <div className="bg-black/40 border border-[var(--jarvis-border)] p-6 rounded-sm flex flex-col justify-between hover:border-[var(--jarvis-primary)] transition-all">
             <div>
-              <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-[0.25em] mb-3">
+              <div className="font-mono text-[10px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] mb-3">
                 02 // PSYCHOLOGICAL HOOK
               </div>
               <p className="text-xs sm:text-sm text-white font-bold italic leading-relaxed">
                 "The average corporate client wastes 34% of creative budget on dark social attribution blind spots."
               </p>
             </div>
-            <div className="mt-5 pt-4 border-t border-neutral-800/60 flex items-center justify-between font-mono text-xs">
+            <div className="mt-5 pt-4 border-t border-neutral-800/80 flex items-center justify-between font-mono text-xs">
               <span className="text-neutral-400">COMPLIANCE:</span>
               <span className="font-black text-emerald-400">100% SOP ADHERENCE</span>
             </div>
           </div>
 
-          <div className="bg-[#101217] border border-neutral-800/80 p-6 rounded-sm flex flex-col justify-between">
+          <div className="bg-black/40 border border-[var(--jarvis-border)] p-6 rounded-sm flex flex-col justify-between hover:border-[var(--jarvis-primary)] transition-all">
             <div>
-              <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-[0.25em] mb-3">
+              <div className="font-mono text-[10px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] mb-3">
                 03 // PRODUCTION VELOCITY
               </div>
               <p className="text-xs sm:text-sm text-neutral-200 font-medium leading-relaxed">
                 Active workflow nodes spanning Annual Reports, Advertising, Podcast Studio, and Digital Campaigns.
               </p>
             </div>
-            <div className="mt-5 pt-4 border-t border-neutral-800/60 flex items-center justify-between font-mono text-xs">
+            <div className="mt-5 pt-4 border-t border-neutral-800/80 flex items-center justify-between font-mono text-xs">
               <span className="text-neutral-400">ACTIVE PIPELINES:</span>
-              <span className="font-black text-white">{activeProjects.length} NODES LIVE</span>
+              <span className="font-black text-[var(--jarvis-primary)] font-mono">{activeProjects.length} NODES LIVE</span>
             </div>
           </div>
 
-          <div className="bg-[#101217] border border-neutral-800/80 p-6 rounded-sm flex flex-col justify-between">
+          <div className="bg-black/40 border border-[var(--jarvis-border)] p-6 rounded-sm flex flex-col justify-between hover:border-[var(--jarvis-primary)] transition-all">
             <div>
-              <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-[0.25em] mb-3">
+              <div className="font-mono text-[10px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] mb-3">
                 04 // SYSTEM UNIVERSAL SYNC
               </div>
-              <div className="text-3xl font-mono font-black text-white tracking-tight tabular-nums mt-1">
+              <div className="text-3xl font-mono font-black text-white tracking-tight tabular-nums mt-1 hud-glow-text">
                 {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
               </div>
               <p className="text-[10px] font-mono text-neutral-400 uppercase mt-2">
                 {currentTime.toLocaleDateString([], { weekday: 'short', day: '2-digit', month: 'short' }).toUpperCase()}
               </p>
             </div>
-            <div className="mt-5 pt-4 border-t border-neutral-800/60 flex items-center justify-between font-mono text-xs">
+            <div className="mt-5 pt-4 border-t border-neutral-800/80 flex items-center justify-between font-mono text-xs">
               <span className="text-neutral-400">STABILITY:</span>
               <span className="font-black text-emerald-400 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> OPTIMAL

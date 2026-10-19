@@ -20,8 +20,12 @@ import Footer from './components/Footer';
 import FloatingAI from './components/FloatingAI';
 import { db, isFirebaseEnabled } from './firebase';
 import { doc, setDoc, onSnapshot, collection, updateDoc, addDoc, query, orderBy, limit, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
-import { LogOut, Users, FileText, Hexagon, Building2, Bell, Clock, DollarSign, UserCircle, MessageSquare, ListTodo, X, Building, Zap, Target, CheckCircle2, Plus, Calendar, Timer, AlertCircle, Archive, LayoutGrid, Heart, ChevronRight, ChevronLeft, Search, Check, Trash2, StickyNote, Send, Link as LinkIcon, Bookmark, Briefcase, ChevronDown, CloudOff, Cloud, RefreshCw, Database, ServerCrash, ShieldCheck, HardDrive, Cpu, Bot, CheckCircle, Compass, Circle, Menu, ArrowRight, Layers, Radio, RadioTower, Video, Mic, Globe, ShieldAlert, Lock, BarChart2 } from 'lucide-react';
+import { LogOut, Users, FileText, Hexagon, Building2, Bell, Clock, DollarSign, UserCircle, MessageSquare, ListTodo, X, Building, Zap, Target, CheckCircle2, Plus, Calendar, Timer, AlertCircle, Archive, LayoutGrid, Heart, ChevronRight, ChevronLeft, Search, Check, Trash2, StickyNote, Send, Link as LinkIcon, Bookmark, Briefcase, ChevronDown, CloudOff, Cloud, RefreshCw, Database, ServerCrash, ShieldCheck, HardDrive, Cpu, Bot, CheckCircle, Compass, Circle, Menu, ArrowRight, Layers, Radio, RadioTower, Video, Mic, Globe, ShieldAlert, Lock, BarChart2, Sliders, Sparkles, Sun, Flame } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
+import { JarvisThemeConfig } from './types';
+import { loadSavedJarvisTheme, saveJarvisTheme, applyJarvisThemeToDOM } from './utils/jarvisTheme';
+import { playJarvisSound } from './utils/jarvisAudio';
+import JARVISSettingsModal from './components/JARVISSettingsModal';
 
 type ViewState = 'dashboard' | 'detail' | 'staff' | 'clients' | 'finance' | 'hr' | 'registry' | 'notes' | 'procedures' | 'calendar' | 'access' | 'workload';
 type StorageMode = 'cloud' | 'local';
@@ -71,6 +75,17 @@ const App: React.FC = () => {
   const [showNewClientForm, setShowNewClientForm] = useState(false);
   const [isBriefSearchOpen, setIsBriefSearchOpen] = useState(false);
   const [briefSearchQuery, setBriefSearchQuery] = useState('');
+  const [jarvisTheme, setJarvisTheme] = useState<JarvisThemeConfig>(loadSavedJarvisTheme);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    applyJarvisThemeToDOM(jarvisTheme);
+  }, [jarvisTheme]);
+
+  const handleSaveTheme = (newConfig: JarvisThemeConfig) => {
+    setJarvisTheme(newConfig);
+    saveJarvisTheme(newConfig);
+  };
 
   const mainScrollRef = useRef<HTMLDivElement>(null);
   const briefDropdownRef = useRef<HTMLDivElement>(null);
@@ -449,11 +464,11 @@ const App: React.FC = () => {
   // Rule: Projects should only be visible to admins, managers, AEs and Finance
   const canViewProjects = isSuperAdmin || isAdmin || isGM || isManager || isAE || isAccounts || !!currentUser?.permissions?.canViewProjects;
 
-  // Rule: New campaign can be created only by AE / managers / admins / super admins / general managers
-  const canCreateCampaign = isSuperAdmin || isAdmin || isGM || isManager || isAE;
+  // Rule: New campaign can be created ONLY by Super Admin and Admin
+  const canCreateCampaign = isSuperAdmin || isAdmin;
 
-  // Rule: Management buttons displayed only for managers / admins / super admins / general managers
-  const canViewManagerButtons = isSuperAdmin || isAdmin || isGM || isManager;
+  // Rule: Management buttons displayed ONLY for Super Admin and Admin
+  const canViewManagerButtons = isSuperAdmin || isAdmin;
 
   // Rule: Workload dashboard page access for AE / managers / admins / super admins / general managers
   const canAccessWorkload = isSuperAdmin || isAdmin || isGM || isManager || isAE || !!currentUser?.permissions?.canViewWorkload;
@@ -618,28 +633,52 @@ const App: React.FC = () => {
   if (!currentUser) return <Login onLogin={setCurrentUser} staffList={staffList} />;
 
   return (
-    <div className="min-h-screen bg-[#060709] text-white flex flex-col font-sans selection:bg-white selection:text-black overflow-hidden relative">
-      <div ref={mainScrollRef} className="flex-1 flex flex-col min-w-0 overflow-y-auto custom-scrollbar relative transition-all duration-300">
+    <div className="min-h-screen bg-[var(--jarvis-bg-dark)] text-white flex flex-col font-sans selection:bg-white selection:text-black overflow-hidden relative">
+      {/* Dynamic JARVIS Ambient Floating Liquid Glass Orbs */}
+      {jarvisTheme.ambientOrbs && (
+        <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+          <div 
+            className="absolute -top-32 -left-32 w-[600px] h-[600px] rounded-full blur-[120px] opacity-25 animate-orb-1"
+            style={{ background: `radial-gradient(circle, var(--jarvis-primary) 0%, transparent 70%)` }}
+          />
+          <div 
+            className="absolute top-1/3 -right-40 w-[550px] h-[550px] rounded-full blur-[130px] opacity-20 animate-orb-2"
+            style={{ background: `radial-gradient(circle, var(--jarvis-secondary) 0%, transparent 70%)` }}
+          />
+          <div 
+            className="absolute -bottom-40 left-1/4 w-[700px] h-[700px] rounded-full blur-[140px] opacity-20 animate-orb-3"
+            style={{ background: `radial-gradient(circle, var(--jarvis-primary) 0%, transparent 70%)` }}
+          />
+        </div>
+      )}
+
+      {/* Holographic Scanline CRT Effect */}
+      {jarvisTheme.scanlineEffect && (
+        <div className="fixed inset-0 pointer-events-none z-[80] opacity-[0.035] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%)] bg-[length:100%_4px]" />
+      )}
+
+      <div ref={mainScrollRef} className="flex-1 flex flex-col min-w-0 overflow-y-auto custom-scrollbar relative z-10 transition-all duration-300">
         
-        {/* Precision Dual-Layer Header matching screenshot */}
-        <header className="fixed top-0 left-0 right-0 z-[60] bg-[#07080a]/95 backdrop-blur-md border-b border-neutral-800/80 transition-all">
+        {/* Precision Dual-Layer Header matching JARVIS liquid glass specification */}
+        <header className="fixed top-0 left-0 right-0 z-[60] liquid-glass border-b border-[var(--jarvis-border)] transition-all">
           {/* Top Row: System telemetry & primary nav */}
-          <div className="h-16 px-4 sm:px-8 flex items-center justify-between border-b border-neutral-900/90 gap-4">
+          <div className="h-16 px-4 sm:px-8 flex items-center justify-between border-b border-black/40 gap-4">
             <div className="flex items-center gap-6 shrink-0">
               <div className="cursor-pointer group" onClick={() => handleNav('dashboard')}>
-                <div className="font-mono text-[9px] text-neutral-400 uppercase tracking-[0.25em] leading-none mb-1">
-                  PROPRIETARY ECOSYSTEM // V4.0.2
+                <div className="font-mono text-[9px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] leading-none mb-1 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
+                  <span>PROPRIETARY ECOSYSTEM // JARVIS V4.0.2</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-black text-lg sm:text-xl tracking-tight uppercase text-white font-heading">MEDIAWIZE</span>
-                  <span className="font-light text-lg sm:text-xl tracking-widest text-neutral-400">OPS</span>
+                  <span className="font-light text-lg sm:text-xl tracking-widest text-[var(--jarvis-primary)] hud-glow-text">OPS</span>
                 </div>
               </div>
 
               {/* Status pill tag */}
-              <div className="hidden sm:inline-flex items-center gap-2 px-3 py-1 bg-[#101216] border border-neutral-800 rounded-full text-[10px] font-mono text-neutral-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse"></span>
-                <span>Pulse Analytics</span>
+              <div className="hidden sm:inline-flex items-center gap-2 px-3 py-1 bg-black/50 border border-[var(--jarvis-border)] rounded-full text-[10px] font-mono text-neutral-300 shadow-[0_0_10px_rgba(var(--jarvis-primary-rgb),0.2)]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] shadow-[0_0_8px_var(--jarvis-primary)] animate-pulse"></span>
+                <span>{jarvisTheme.name.toUpperCase()}</span>
               </div>
             </div>
 
@@ -650,14 +689,17 @@ const App: React.FC = () => {
                 return (
                   <button
                     key={nav.id}
-                    onClick={() => handleNav(nav.id as any)}
-                    className={`flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider transition-colors py-1 ${
+                    onClick={() => {
+                      handleNav(nav.id as any);
+                      playJarvisSound('click', !jarvisTheme.audioFeedback);
+                    }}
+                    className={`flex items-center gap-1.5 font-mono text-xs uppercase tracking-wider transition-all py-1 ${
                       isActive 
-                        ? 'text-white font-bold border-b-2 border-white' 
-                        : 'text-neutral-400 hover:text-neutral-200'
+                        ? 'text-[var(--jarvis-primary)] font-bold border-b-2 border-[var(--jarvis-primary)] hud-glow-text' 
+                        : 'text-neutral-400 hover:text-white'
                     }`}
                   >
-                    <span className="text-[10px] text-neutral-400">{nav.code}</span>
+                    <span className="text-[10px] opacity-70">{nav.code}</span>
                     <span>{nav.label}</span>
                   </button>
                 );
@@ -665,26 +707,43 @@ const App: React.FC = () => {
             </nav>
 
             {/* Right Telemetry & Actions */}
-            <div className="flex items-center gap-4 shrink-0">
+            <div className="flex items-center gap-3 shrink-0">
               <div className="hidden 2xl:block text-right font-mono text-[9px] text-neutral-400 leading-tight">
-                <div>[ 6.9271° N, 79.8612° E ]</div>
+                <div className="text-[var(--jarvis-primary)]">[ 6.9271° N, 79.8612° E ]</div>
                 <div className="text-neutral-400">NODE: COLOMBO 07</div>
               </div>
 
-              {/* High Contrast White Action Button matching screenshot */}
+              {/* High Contrast JARVIS Liquid Glass Action Button */}
               {canCreateCampaign && (
                 <button
-                  onClick={() => setIsNewProjectModalOpen(true)}
-                  className="bg-white text-black hover:bg-neutral-200 px-4 py-2 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 rounded-sm transition-all shadow-md active:scale-95 shrink-0 cursor-pointer"
+                  onClick={() => {
+                    setIsNewProjectModalOpen(true);
+                    playJarvisSound('deploy', !jarvisTheme.audioFeedback);
+                  }}
+                  className="jarvis-btn-primary px-4 py-2 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 rounded-sm transition-all shadow-md active:scale-95 shrink-0 cursor-pointer"
+                  title="Initialize New Campaign Node"
                 >
                   <Plus size={14} strokeWidth={3} /> NEW CAMPAIGN
                 </button>
               )}
 
+              {/* JARVIS Settings & Optics Button */}
+              <button
+                onClick={() => {
+                  setIsSettingsOpen(true);
+                  playJarvisSound('sonar', !jarvisTheme.audioFeedback);
+                }}
+                className="h-9 px-3 border border-[var(--jarvis-border)] bg-[rgba(var(--jarvis-primary-rgb),0.12)] hover:bg-[rgba(var(--jarvis-primary-rgb),0.24)] hover:border-[var(--jarvis-primary)] text-white rounded-sm flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.25)] cursor-pointer group"
+                title="JARVIS Holographic Theme, Optics & Color Customizer"
+              >
+                <Sliders size={15} className="text-[var(--jarvis-primary)] group-hover:rotate-45 transition-transform duration-300" />
+                <span className="hidden lg:inline font-mono text-[10px] uppercase font-bold tracking-wider text-[var(--jarvis-primary)]">SETTINGS</span>
+              </button>
+
               {/* Hub Icon */}
               <button
                 onClick={handleOpenHub}
-                className="w-9 h-9 border border-neutral-800 bg-[#101216] text-neutral-300 hover:text-white hover:border-neutral-700 rounded-sm flex items-center justify-center transition-all relative"
+                className="w-9 h-9 border border-[var(--jarvis-border)] bg-black/40 text-neutral-300 hover:text-white hover:border-[var(--jarvis-primary)] rounded-sm flex items-center justify-center transition-all relative"
                 title="Communication Hub"
               >
                 <MessageSquare size={16} />
@@ -693,23 +752,23 @@ const App: React.FC = () => {
 
               {/* Menu Drawer */}
               <button
-                onClick={() => { setSidebarTab('menu'); setIsSidebarOpen(true); }}
-                className="w-9 h-9 border border-neutral-800 bg-[#101216] text-neutral-300 hover:text-white hover:border-neutral-700 rounded-sm flex items-center justify-center transition-all"
+                onClick={() => { setSidebarTab('menu'); setIsSidebarOpen(true); playJarvisSound('click', !jarvisTheme.audioFeedback); }}
+                className="w-9 h-9 border border-[var(--jarvis-border)] bg-black/40 text-neutral-300 hover:text-white hover:border-[var(--jarvis-primary)] rounded-sm flex items-center justify-center transition-all"
                 title="System Menu"
               >
                 <Menu size={16} />
               </button>
 
               {/* User Avatar */}
-              <div className="flex items-center gap-2 border border-neutral-800 bg-[#101216] pl-1.5 pr-3 py-1 rounded-sm">
-                <img src={currentUser.avatarUrl} className="w-6 h-6 rounded-sm object-cover" alt="" />
+              <div className="flex items-center gap-2 border border-[var(--jarvis-border)] bg-black/40 pl-1.5 pr-3 py-1 rounded-sm">
+                <img src={currentUser.avatarUrl} className="w-6 h-6 rounded-sm object-cover border border-[var(--jarvis-primary)]/40" alt="" />
                 <span className="hidden sm:inline font-mono text-[10px] text-neutral-300 uppercase">{currentUser.name.split(' ')[0]}</span>
               </div>
 
               {/* Logout */}
               <button
                 onClick={handleLogout}
-                className="w-9 h-9 border border-neutral-800 bg-[#101216] text-neutral-400 hover:text-rose-400 hover:border-rose-900/50 rounded-sm flex items-center justify-center transition-all"
+                className="w-9 h-9 border border-neutral-800 bg-black/40 text-neutral-400 hover:text-rose-400 hover:border-rose-900/50 rounded-sm flex items-center justify-center transition-all"
                 title="Log Out"
               >
                 <LogOut size={16} />
@@ -718,19 +777,19 @@ const App: React.FC = () => {
           </div>
 
           {/* Subheader Row: Module title & Switch Brief control */}
-          <div className="h-14 px-4 sm:px-8 bg-[#0a0b0e] flex items-center justify-between gap-4">
+          <div className="h-14 px-4 sm:px-8 bg-black/40 border-t border-[var(--jarvis-border)]/40 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-8 h-8 bg-white text-black font-black text-xs flex items-center justify-center rounded-sm shrink-0">
+              <div className="w-8 h-8 jarvis-btn-primary text-black font-black text-xs flex items-center justify-center rounded-sm shrink-0 shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.4)]">
                 {viewMeta.badge}
               </div>
               <div className="flex items-center gap-3 min-w-0">
                 <h2 className="text-sm sm:text-base font-black tracking-tight text-white uppercase truncate font-heading">
                   {viewMeta.title}
                 </h2>
-                <span className="px-2 py-0.5 bg-white text-black font-black text-[9px] uppercase tracking-wider rounded-none shrink-0">
+                <span className="px-2 py-0.5 bg-[var(--jarvis-primary)] text-black font-black text-[9px] uppercase tracking-wider rounded-none shrink-0 shadow-[0_0_10px_rgba(var(--jarvis-primary-rgb),0.3)]">
                   {viewMeta.tag}
                 </span>
-                <span className="hidden md:inline text-xs text-neutral-400 font-medium truncate">
+                <span className="hidden md:inline text-xs text-neutral-300 font-medium truncate">
                   {viewMeta.subtitle}
                 </span>
               </div>
@@ -1112,6 +1171,32 @@ const App: React.FC = () => {
               <div className={`flex-1 overflow-y-auto bg-[#0b0c10] custom-scrollbar ${sidebarTab === 'hub' ? 'p-0' : 'p-6'}`}>
                   {sidebarTab === 'menu' && (
                     <div className="space-y-6 animate-in fade-in duration-300">
+                        {/* JARVIS Theme & System Settings Action in Menu */}
+                        <button 
+                          onClick={() => {
+                            setIsSettingsOpen(true);
+                            setIsSidebarOpen(false);
+                            playJarvisSound('sonar', !jarvisTheme.audioFeedback);
+                          }}
+                          className="w-full flex items-center justify-between p-4 rounded-sm border border-[var(--jarvis-primary)] bg-[rgba(var(--jarvis-primary-rgb),0.1)] text-white shadow-[0_0_20px_-3px_rgba(var(--jarvis-primary-rgb),0.35)] transition-all text-left cursor-pointer group"
+                        >
+                          <div className="flex items-center gap-3.5 min-w-0">
+                            <div className="w-8 h-8 rounded-sm bg-black/60 border border-[var(--jarvis-primary)] flex items-center justify-center text-[var(--jarvis-primary)] group-hover:rotate-90 transition-transform shadow-[0_0_10px_rgba(var(--jarvis-primary-rgb),0.5)]">
+                              <Sliders size={16} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="font-black text-xs uppercase tracking-wider text-[var(--jarvis-primary)] font-heading flex items-center gap-2">
+                                <span>JARVIS THEME & OPTICS</span>
+                                <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
+                              </div>
+                              <div className="text-[10px] text-neutral-300 truncate font-mono">
+                                Calibrate Colors // {jarvisTheme.name}
+                              </div>
+                            </div>
+                          </div>
+                          <Sparkles size={16} className="text-[var(--jarvis-primary)] animate-pulse shrink-0" />
+                        </button>
+
                         <div className="space-y-3">
                             <h3 className="font-mono text-[10px] uppercase text-neutral-400 tracking-[0.3em] px-1">System Modules</h3>
                             <div className="grid grid-cols-1 gap-2.5">
@@ -1448,6 +1533,14 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* JARVIS System & Theme Settings Modal */}
+      <JARVISSettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        currentTheme={jarvisTheme}
+        onSaveTheme={handleSaveTheme}
+      />
     </div>
   );
 };

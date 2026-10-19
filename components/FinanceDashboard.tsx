@@ -60,30 +60,31 @@ const FinanceDashboard: React.FC<FinanceDashboardProps> = ({ projects, pettyCash
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 animate-in fade-in duration-500">
-      {/* Header Banner matching Screenshot */}
-      <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-8 sm:p-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+      {/* Header Banner - Liquid Glass */}
+      <div className="liquid-glass-card hud-frame rounded-sm p-8 sm:p-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 shadow-[0_0_40px_-10px_rgba(var(--jarvis-primary-rgb),0.2)]">
         <div>
-          <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-[0.25em] mb-2">
-            PROPRIETARY ECOSYSTEM // CAPITAL TELEMETRY
+          <div className="font-mono text-[10px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] mb-2 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
+            <span>PROPRIETARY ECOSYSTEM // CAPITAL TELEMETRY // JARVIS MATRIX</span>
           </div>
           <h1 className="text-3xl sm:text-5xl font-black text-white uppercase tracking-tight font-heading leading-none">
-            FINANCE <span className="text-neutral-500">COMMAND</span>
+            FINANCE <span className="text-[var(--jarvis-primary)] hud-glow-text">COMMAND</span>
           </h1>
-          <p className="text-neutral-400 text-xs font-mono uppercase tracking-wider mt-3">
+          <p className="text-neutral-300 text-xs font-mono uppercase tracking-wider mt-3">
             Real-Time Revenue Verification, Cash Reserves & Project Ledgers
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          <div className="px-6 py-3 bg-[#12141a] border border-neutral-800 rounded-sm font-mono text-left">
-            <div className="text-[9px] text-neutral-400 uppercase tracking-widest">LIQUID CAPITAL</div>
-            <div className={`text-2xl font-black leading-none mt-1 ${balance < 5000 ? 'text-rose-400' : 'text-emerald-400'}`}>
+          <div className="px-6 py-3 bg-black/50 border border-[var(--jarvis-border)] rounded-sm font-mono text-left shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.15)]">
+            <div className="text-[9px] text-[var(--jarvis-primary)] uppercase tracking-widest font-bold">LIQUID CAPITAL</div>
+            <div className={`text-2xl font-black leading-none mt-1 font-mono ${balance < 5000 ? 'text-rose-400' : 'text-emerald-400'}`}>
               LKR {balance.toLocaleString()}
             </div>
           </div>
-          <div className="px-6 py-3 bg-[#12141a] border border-neutral-800 rounded-sm font-mono text-left">
-            <div className="text-[9px] text-neutral-400 uppercase tracking-widest">VERIFIED REVENUE</div>
-            <div className="text-2xl font-black text-white leading-none mt-1">
+          <div className="px-6 py-3 bg-black/50 border border-[var(--jarvis-border)] rounded-sm font-mono text-left shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.15)]">
+            <div className="text-[9px] text-[var(--jarvis-primary)] uppercase tracking-widest font-bold">VERIFIED REVENUE</div>
+            <div className="text-2xl font-black text-white leading-none mt-1 font-mono">
               LKR {totalRevenue.toLocaleString()}
             </div>
           </div>
@@ -91,7 +92,7 @@ const FinanceDashboard: React.FC<FinanceDashboardProps> = ({ projects, pettyCash
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-neutral-800 pb-4">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--jarvis-border)] pb-4">
         {[
           { id: 'payment-feed', label: 'Incoming Feed', count: paymentUpdates.filter(u => u.status === 'Pending Verification').length },
           { id: 'advances', label: 'Project Ledger', count: projects.length },
@@ -102,8 +103,8 @@ const FinanceDashboard: React.FC<FinanceDashboardProps> = ({ projects, pettyCash
             onClick={() => setActiveTab(tab.id as any)}
             className={`px-5 py-2.5 rounded-sm font-mono text-xs uppercase tracking-wider transition-all flex items-center gap-2 border ${
               activeTab === tab.id
-                ? 'bg-white text-black font-black border-white shadow-md'
-                : 'bg-[#0a0b0e] text-neutral-400 hover:text-white border-neutral-800 hover:border-neutral-700'
+                ? 'jarvis-btn-primary text-black font-black shadow-md'
+                : 'bg-black/40 text-neutral-400 hover:text-white border-[var(--jarvis-border)] hover:border-[var(--jarvis-primary)]'
             }`}
           >
             <span>{tab.label}</span>

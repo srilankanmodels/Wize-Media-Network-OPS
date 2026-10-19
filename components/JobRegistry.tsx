@@ -41,8 +41,8 @@ const JobRegistry: React.FC<JobRegistryProps> = ({
   const isManager = normRole === 'management' || currentUser?.role === Role.MANAGEMENT || normRole.includes('lead') || normRole.includes('manager');
   const isAE = normRole === 'account executive' || currentUser?.role === Role.AE;
 
-  // New campaign can be created only by AE / managers / admins / super admins / general managers
-  const canCreateCampaign = isSuperAdmin || isAdmin || isGM || isManager || isAE;
+  // New campaign can be created ONLY by Super Admin and Admin
+  const canCreateCampaign = isSuperAdmin || isAdmin;
   const canManageStatus = isSuperAdmin || isAdmin || isGM || isManager;
 
   const filteredProjects = projects.filter(p => {
@@ -181,30 +181,31 @@ const JobRegistry: React.FC<JobRegistryProps> = ({
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 animate-in fade-in duration-500">
-      {/* Header Section */}
-      <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-8 sm:p-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+      {/* Header Section - Liquid Glass */}
+      <div className="liquid-glass-card hud-frame rounded-sm p-8 sm:p-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 shadow-[0_0_40px_-10px_rgba(var(--jarvis-primary-rgb),0.2)]">
         <div>
-          <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-[0.25em] mb-2">
-            PROPRIETARY ECOSYSTEM // STRATEGY DIRECTORY
+          <div className="font-mono text-[10px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] mb-2 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
+            <span>PROPRIETARY ECOSYSTEM // STRATEGY DIRECTORY // JARVIS MATRIX</span>
           </div>
           <h1 className="text-3xl sm:text-5xl font-black text-white uppercase tracking-tight font-heading leading-none">
-            JOB <span className="text-neutral-500">REGISTRY</span>
+            JOB <span className="text-[var(--jarvis-primary)] hud-glow-text">REGISTRY</span>
           </h1>
-          <p className="text-neutral-400 text-xs font-mono uppercase tracking-wider mt-3">
+          <p className="text-neutral-300 text-xs font-mono uppercase tracking-wider mt-3">
             Master Strategic Deployment Database & Pipeline Archives
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          <div className="px-6 py-3 bg-[#12141a] border border-neutral-800 rounded-sm font-mono text-left">
-            <div className="text-[9px] text-neutral-400 uppercase tracking-widest">SYSTEM NODES</div>
-            <div className="text-2xl font-black text-white leading-none mt-1">{projects.length}</div>
+          <div className="px-6 py-3 bg-black/50 border border-[var(--jarvis-border)] rounded-sm font-mono text-left shadow-[0_0_15px_rgba(var(--jarvis-primary-rgb),0.15)]">
+            <div className="text-[9px] text-[var(--jarvis-primary)] uppercase tracking-widest font-bold">SYSTEM NODES</div>
+            <div className="text-2xl font-black text-white leading-none mt-1 font-mono">{projects.length}</div>
           </div>
 
           {canCreateCampaign && (
             <button 
               onClick={onNewProjectTrigger}
-              className="bg-white text-black hover:bg-neutral-200 px-6 py-3.5 font-black text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer"
+              className="jarvis-btn-primary px-6 py-3.5 font-black text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer"
             >
               <Plus size={16} strokeWidth={3} /> INITIALIZE CAMPAIGN
             </button>
@@ -215,18 +216,18 @@ const JobRegistry: React.FC<JobRegistryProps> = ({
       {/* Filter and Search Bar */}
       <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
         <div className="relative flex-1">
-          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500" />
+          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--jarvis-primary)] opacity-80" />
           <input 
             type="text" 
             placeholder="SEARCH REGISTRY BY JOB CODE (MW-J-...), CLIENT OR CAMPAIGN NAME..." 
-            className="w-full pl-12 pr-6 py-3.5 bg-[#0a0b0e] border border-neutral-800 focus:border-white font-mono text-xs uppercase tracking-wider text-white outline-none rounded-sm transition-colors placeholder:text-neutral-600"
+            className="w-full pl-12 pr-6 py-3.5 bg-black/40 border border-[var(--jarvis-border)] focus:border-[var(--jarvis-primary)] font-mono text-xs uppercase tracking-wider text-white outline-none rounded-sm transition-all placeholder:text-neutral-500 shadow-inner"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
 
         {/* Status Category Pills */}
-        <div className="flex items-center gap-1.5 p-1 bg-[#0a0b0e] border border-neutral-800 rounded-sm overflow-x-auto">
+        <div className="flex items-center gap-1.5 p-1 bg-black/40 border border-[var(--jarvis-border)] rounded-sm overflow-x-auto">
           {(['ALL', 'In Progress', 'Paused', 'Cancelled', 'Completed'] as const).map(tab => (
             <button
               key={tab}
@@ -234,8 +235,8 @@ const JobRegistry: React.FC<JobRegistryProps> = ({
               onClick={() => setStatusFilter(tab)}
               className={`px-3 py-2 font-mono text-[10px] uppercase rounded-xs transition-all whitespace-nowrap cursor-pointer ${
                 statusFilter === tab
-                  ? 'bg-white text-black font-black'
-                  : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
+                  ? 'jarvis-btn-primary text-black font-black'
+                  : 'text-neutral-400 hover:text-white hover:bg-white/10'
               }`}
             >
               {tab === 'ALL' ? 'ALL STATUS' : tab.toUpperCase()}
