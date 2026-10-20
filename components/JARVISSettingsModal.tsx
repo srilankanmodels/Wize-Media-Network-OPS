@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { JarvisThemeConfig, JarvisPresetId } from '../types';
 import { JARVIS_THEME_PRESETS } from '../utils/jarvisTheme';
 import { playJarvisSound } from '../utils/jarvisAudio';
@@ -49,6 +49,10 @@ export const JARVISSettingsModal: React.FC<JARVISSettingsModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'presets' | 'custom' | 'optics'>('presets');
   const [config, setConfig] = useState<JarvisThemeConfig>(currentTheme);
+
+  useEffect(() => {
+    setConfig(currentTheme);
+  }, [currentTheme]);
 
   if (!isOpen) return null;
 

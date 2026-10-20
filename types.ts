@@ -367,17 +367,58 @@ export interface MeetingNote {
   duration?: number; // minutes
 }
 
+export interface LeaveApprovalTier {
+  approved: boolean;
+  approvedBy: string;
+  approvedById?: string;
+  role?: string;
+  department?: string;
+  email?: string;
+  timestamp: Date | string;
+  note?: string;
+}
+
 export interface LeaveRequest {
   id: string;
   staffId: string;
   staffName: string;
   department?: string;
+  staffRole?: string;
+  staffEmail?: string;
   type: 'Annual' | 'Sick' | 'Casual' | 'Unpaid' | 'Short';
   startDate: Date;
   endDate: Date;
   status: 'Pending' | 'Approved' | 'Rejected';
   reason: string;
   timestamp: Date;
+  
+  // Automatic applicant capture
+  appliedBy?: string;
+  appliedById?: string;
+  appliedByRole?: string;
+  appliedByDepartment?: string;
+  appliedByEmail?: string;
+  appliedAt?: Date | string;
+  
+  // Workload Handover / Duty Assignment
+  assignedWorkloadToId?: string;
+  assignedWorkloadToName?: string;
+  assignedWorkloadToRole?: string;
+  
+  // Two-Person Approval Chain (Division Manager & Director)
+  managerApproval?: LeaveApprovalTier;
+  directorApproval?: LeaveApprovalTier;
+  
+  // Rejection Audit (Mandatory Reason)
+  rejectedBy?: string;
+  rejectedById?: string;
+  rejectedByRole?: string;
+  rejectedByDepartment?: string;
+  rejectedByEmail?: string;
+  rejectedAt?: Date | string;
+  rejectionReason?: string;
+  
+  // Legacy / backward compatibility
   reviewedBy?: string;
   reviewedAt?: Date;
   reviewNote?: string;

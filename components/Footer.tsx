@@ -29,7 +29,7 @@ const Footer: React.FC<FooterProps> = ({ agencyProfile, meetingNotes, projects, 
   };
 
   return (
-    <footer className="mt-auto border-t border-neutral-800 bg-[#060709] text-white pt-12 pb-8 px-4 sm:px-8">
+    <footer className="mt-auto border-t border-[var(--jarvis-border)] liquid-glass text-white pt-12 pb-8 px-4 sm:px-8 transition-colors">
       <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-3 gap-10">
         {/* Company Info */}
         <div className="space-y-4">

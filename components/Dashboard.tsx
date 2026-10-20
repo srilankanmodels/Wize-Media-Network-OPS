@@ -5,7 +5,7 @@ import {
   Target, Plus, Zap, Activity, Bot, Users, RefreshCw, AlertCircle, TrendingUp, 
   Search, Send, Timer, Play, Pause, ChevronRight, LayoutGrid, Layers, Hash, 
   StopCircle, Check, Gauge, Award, Eye, ExternalLink, ShieldCheck, ArrowUpRight,
-  Mail, ShieldAlert, CheckCircle, ChevronDown, HardDrive, Lock
+  Mail, ShieldAlert, CheckCircle, ChevronDown, HardDrive, Lock, UserCheck
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import GameHub from './GameHub';
@@ -30,7 +30,7 @@ interface DashboardProps {
   clientList: Client[];
   onSendMessage?: (text: string, channelId: string) => void;
   leaveRequests?: LeaveRequest[];
-  onUpdateLeave?: (requestId: string, status: 'Approved' | 'Rejected', reviewNote?: string) => void;
+  onUpdateLeave?: (requestId: string, status: 'Approved' | 'Rejected', reviewNote?: string, tier?: 'manager' | 'director' | 'both') => void;
   onNavigateToHR?: () => void;
   onNavigateToWorkload?: () => void;
 }
@@ -52,6 +52,9 @@ const Dashboard: React.FC<DashboardProps> = ({
     type: 'meeting' as 'meeting' | 'deadline' | 'personal' 
   });
   const [isGameHubOpen, setIsGameHubOpen] = useState(false);
+  const [rejectModalLeave, setRejectModalLeave] = useState<LeaveRequest | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectError, setRejectError] = useState<string | null>(null);
   
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -94,13 +97,15 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [aiChat]);
 
   const normRole = (currentUser.role || '').toLowerCase();
+  const normDept = (currentUser.department || '').toLowerCase();
   const isSuperAdmin = normRole === 'super admin' || currentUser.role === Role.SUPER_ADMIN;
   const isAdmin = isSuperAdmin || normRole === 'admin' || currentUser.role === Role.ADMIN;
   const isGM = normRole === 'general manager' || normRole === 'gm' || currentUser.role === Role.GM;
+  const isDirector = normRole.includes('director') || normDept.includes('director');
   const isHR = normRole === 'hr' || currentUser.role === Role.HR;
-  const isAccounts = normRole === 'accounts' || currentUser.role === Role.ACCOUNTS || (currentUser.department || '').toLowerCase() === 'finance';
+  const isAccounts = normRole === 'accounts' || currentUser.role === Role.ACCOUNTS || normDept === 'finance';
   const isAE = normRole === 'account executive' || currentUser.role === Role.AE;
-  const isManager = normRole === 'management' || currentUser.role === Role.MANAGEMENT || (currentUser.role || '').toLowerCase().includes('lead') || (currentUser.role || '').toLowerCase().includes('manager');
+  const isManager = normRole === 'management' || currentUser.role === Role.MANAGEMENT || normRole.includes('lead') || normRole.includes('manager') || normDept.includes('management');
 
   // Rule: Only admins, GM or finance person have access to finance
   const canViewFinance = isSuperAdmin || isAdmin || isGM || isAccounts || !!currentUser.permissions?.canViewFinance;
@@ -110,8 +115,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   // Rule: New campaign can be created ONLY by Super Admin and Admin
   const canCreateCampaign = isSuperAdmin || isAdmin;
 
-  // Rule: Hero management buttons (Simulator directives) displayed ONLY for Super Admin and Admin
-  const canViewManagerButtons = isSuperAdmin || isAdmin;
+  // Rule: Hero management buttons (Simulator directives) displayed ONLY for Managers / GM / Directors / Admins / Super Admins
+  const canViewManagerButtons = isSuperAdmin || isAdmin || isGM || isDirector || isManager;
 
   // Rule: Workload dashboard access for AE / managers / admins / super admins / general managers
   const canAccessWorkload = isSuperAdmin || isAdmin || isGM || isManager || isAE || !!currentUser.permissions?.canViewWorkload;
@@ -378,6 +383,9 @@ const Dashboard: React.FC<DashboardProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {relevantPendingLeaves.map(leave => {
                   const staff = staffList.find(s => s.id === leave.staffId);
+                  const isDirectorUser = isDirector || isGM || isSuperAdmin;
+                  const isManagerUser = isManager || isAdmin || isSuperAdmin;
+
                   return (
                     <div key={leave.id} className="p-4 bg-[#0e0c0a] border border-amber-800/40 rounded-sm flex flex-col justify-between">
                       <div>
@@ -385,30 +393,101 @@ const Dashboard: React.FC<DashboardProps> = ({
                           <span className="font-heading font-black text-white uppercase text-sm truncate">
                             {leave.staffName}
                           </span>
-                          <span className="px-2 py-0.5 rounded-sm bg-amber-950/80 text-amber-300 border border-amber-700/60 font-mono text-[9px] uppercase">
-                            {leave.type}
+                          <span className={`px-2 py-0.5 rounded-sm font-mono text-[9px] uppercase border font-bold ${
+                            leave.managerApproval?.approved && !leave.directorApproval?.approved
+                              ? 'bg-sky-950/80 text-sky-300 border-sky-600/50'
+                              : !leave.managerApproval?.approved && leave.directorApproval?.approved
+                                ? 'bg-sky-950/80 text-sky-300 border-sky-600/50'
+                                : 'bg-amber-950/80 text-amber-300 border-amber-700/60'
+                          }`}>
+                            {leave.managerApproval?.approved && !leave.directorApproval?.approved ? '1/2 (Awaiting Director)' :
+                             !leave.managerApproval?.approved && leave.directorApproval?.approved ? '1/2 (Awaiting Manager)' :
+                             '0/2 Approvals'}
                           </span>
                         </div>
-                        <div className="font-mono text-[10px] text-neutral-400 space-y-1">
-                          <div>Division: <strong className="text-neutral-200">{staff?.department || 'General'}</strong></div>
+                        <div className="font-mono text-[10px] text-neutral-400 space-y-1.5">
+                          <div>Division: <strong className="text-neutral-200">{staff?.department || leave.department || 'General'}</strong></div>
                           <div>Duration: <span className="text-white">{new Date(leave.startDate).toLocaleDateString()} — {new Date(leave.endDate).toLocaleDateString()}</span></div>
-                          <div className="text-neutral-300 italic truncate mt-1">"{leave.reason}"</div>
+                          <div className="text-neutral-300 italic truncate">"{leave.reason}"</div>
+
+                          {/* Workload Coverage Assignee */}
+                          {leave.assignedWorkloadToName ? (
+                            <div className="flex items-center gap-1.5 text-[10px] text-emerald-400 font-mono mt-1 bg-emerald-950/30 border border-emerald-500/20 px-2 py-1 rounded-xs">
+                              <UserCheck size={12} className="shrink-0" />
+                              <span className="text-neutral-400">Coverage:</span>
+                              <strong className="text-white">{leave.assignedWorkloadToName}</strong>
+                              <span className="text-neutral-400">({leave.assignedWorkloadToRole || 'Staff'})</span>
+                            </div>
+                          ) : (
+                            <div className="text-[9px] text-amber-400/80 italic font-mono">
+                              Workload: Unassigned
+                            </div>
+                          )}
+
+                          {/* Two-Person Approval Progress */}
+                          <div className="grid grid-cols-2 gap-1.5 pt-1 font-mono text-[9px]">
+                            <div className={`p-1.5 rounded-xs border flex items-center justify-between ${
+                              leave.managerApproval?.approved ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300' : 'bg-neutral-900 border-neutral-800 text-neutral-400'
+                            }`}>
+                              <span>1. Div Mgr:</span>
+                              <strong>{leave.managerApproval?.approved ? '✓ Signed' : 'Pending'}</strong>
+                            </div>
+                            <div className={`p-1.5 rounded-xs border flex items-center justify-between ${
+                              leave.directorApproval?.approved ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300' : 'bg-neutral-900 border-neutral-800 text-neutral-400'
+                            }`}>
+                              <span>2. Director:</span>
+                              <strong>{leave.directorApproval?.approved ? '✓ Signed' : 'Pending'}</strong>
+                            </div>
+                          </div>
                         </div>
                       </div>
 
                       {onUpdateLeave && (
-                        <div className="flex items-center gap-2 mt-4 pt-3 border-t border-neutral-800">
+                        <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-neutral-800">
+                          {/* Approve as Division Manager */}
+                          {!leave.managerApproval?.approved && isManagerUser && (
+                            <button
+                              onClick={() => onUpdateLeave(leave.id, 'Approved', `Approved by ${currentUser.name} (Division Manager)`, 'manager')}
+                              className="flex-1 min-w-[100px] py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold uppercase rounded-sm flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
+                              title="Sign off as Division Manager (Approval 1 of 2)"
+                            >
+                              <Check size={12} /> Approve (Manager)
+                            </button>
+                          )}
+
+                          {/* Approve as Director */}
+                          {!leave.directorApproval?.approved && isDirectorUser && (
+                            <button
+                              onClick={() => onUpdateLeave(leave.id, 'Approved', `Approved by ${currentUser.name} (Director)`, 'director')}
+                              className="flex-1 min-w-[100px] py-1.5 bg-sky-600 hover:bg-sky-500 text-white font-mono text-[10px] font-bold uppercase rounded-sm flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
+                              title="Sign off as Director (Approval 2 of 2)"
+                            >
+                              <Check size={12} /> Approve (Director)
+                            </button>
+                          )}
+
+                          {/* Super Admin / GM / Admin dual-approval override */}
+                          {(isSuperAdmin || isAdmin || isGM) && !leave.managerApproval?.approved && !leave.directorApproval?.approved && (
+                            <button
+                              onClick={() => onUpdateLeave(leave.id, 'Approved', `Executive dual-authorization by ${currentUser.name}`, 'both')}
+                              className="w-full py-1 bg-neutral-900 hover:bg-neutral-800 text-emerald-400 border border-emerald-500/30 font-mono text-[9px] font-bold uppercase rounded-xs flex items-center justify-center gap-1 cursor-pointer transition-all"
+                              title="Authorize Both Division Manager and Director Sign-offs"
+                            >
+                              <ShieldCheck size={11} /> Authorize Both Sign-offs
+                            </button>
+                          )}
+
+                          {/* Reject Button - Triggers Mandatory Reason Modal */}
                           <button
-                            onClick={() => onUpdateLeave(leave.id, 'Approved', `Approved by ${currentUser.name}`)}
-                            className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[10px] font-bold uppercase rounded-sm flex items-center justify-center gap-1 cursor-pointer transition-all"
+                            onClick={() => {
+                              setRejectModalLeave(leave);
+                              setRejectReason('');
+                              setRejectError(null);
+                            }}
+                            className="flex-1 min-w-[90px] py-1.5 bg-[#201014] hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 font-mono text-[10px] font-bold uppercase rounded-sm flex items-center justify-center gap-1 cursor-pointer transition-all"
+                            title="Reject leave request (Mandatory reason required)"
                           >
-                            <Check size={12} /> Approve
-                          </button>
-                          <button
-                            onClick={() => onUpdateLeave(leave.id, 'Rejected', `Rejected by ${currentUser.name}`)}
-                            className="flex-1 py-1.5 bg-[#201014] hover:bg-rose-900/60 text-rose-400 border border-rose-800/40 font-mono text-[10px] font-bold uppercase rounded-sm flex items-center justify-center gap-1 cursor-pointer transition-all"
-                          >
-                            <X size={12} /> Reject
+                            <X size={12} /> Reject (Give Reason)
                           </button>
                         </div>
                       )}
@@ -1027,6 +1106,111 @@ const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MANDATORY REJECTION REASON MODAL */}
+      {rejectModalLeave && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-[#0b0c0f] border border-neutral-800 rounded-sm w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 bg-rose-950/40 border-b border-neutral-800 flex justify-between items-center text-white">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-sm bg-rose-500/20 text-rose-400 flex items-center justify-center">
+                  <ShieldAlert size={16} />
+                </div>
+                <div>
+                  <div className="font-mono text-[9px] uppercase tracking-widest text-neutral-400">LEAVE GOVERNANCE AUDIT</div>
+                  <h3 className="text-base font-black uppercase text-white font-heading">
+                    Decline Leave Request
+                  </h3>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => { setRejectModalLeave(null); setRejectError(null); }} 
+                className="text-neutral-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 font-mono">
+              <div className="p-3 bg-[#12141a] border border-neutral-800 rounded-sm text-xs space-y-1">
+                <div className="text-[10px] text-neutral-400 uppercase tracking-wider flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 font-bold text-white">
+                    <ShieldAlert size={12} className="text-rose-400" /> Reviewer Identity
+                  </span>
+                  <span className="px-1.5 py-0.5 bg-rose-950/80 border border-rose-500/30 text-rose-400 text-[8px] rounded-xs font-bold uppercase tracking-wider">
+                    Captured Automatically
+                  </span>
+                </div>
+                <div className="text-white font-bold flex items-center gap-1.5">
+                  <span>{currentUser.name}</span>
+                  <span className="text-neutral-400 font-normal text-[11px]">({currentUser.role} // {currentUser.department})</span>
+                </div>
+              </div>
+
+              <div className="text-xs text-neutral-300">
+                Declining <strong className="text-white">{rejectModalLeave.type} Leave</strong> requested by <strong className="text-white">{rejectModalLeave.staffName}</strong> ({new Date(rejectModalLeave.startDate).toLocaleDateString()} - {new Date(rejectModalLeave.endDate).toLocaleDateString()}).
+              </div>
+
+              <div className="p-3 bg-rose-950/20 border border-rose-500/30 rounded-sm text-xs text-rose-300 flex items-center gap-2">
+                <AlertCircle size={14} className="text-rose-400 shrink-0" />
+                <span>A clear operational reason is strictly mandatory so the employee understands why the leave was declined.</span>
+              </div>
+
+              <div>
+                <label className="block text-[10px] text-rose-400 uppercase tracking-widest mb-1.5 flex items-center justify-between">
+                  <span className="font-bold flex items-center gap-1">
+                    <ShieldAlert size={12} /> Rejection Reason * (Mandatory)
+                  </span>
+                  <span className="text-[9px] text-rose-400 font-semibold uppercase">Required</span>
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="Specify reason for decline (e.g. Milestone delivery conflict, lack of department coverage, audit period)..."
+                  className="w-full px-4 py-2.5 bg-[#12141a] border border-rose-500/60 focus:border-rose-400 text-xs text-white outline-none rounded-sm resize-none"
+                  value={rejectReason}
+                  onChange={e => { setRejectReason(e.target.value); setRejectError(null); }}
+                />
+                {rejectError && (
+                  <p className="mt-1.5 text-[11px] text-rose-400 flex items-center gap-1">
+                    <AlertCircle size={12} /> {rejectError}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 bg-[#0e0f14] border-t border-neutral-800 flex items-center justify-end gap-3 font-mono">
+              <button
+                type="button"
+                onClick={() => { setRejectModalLeave(null); setRejectError(null); }}
+                className="px-4 py-2 text-xs text-neutral-400 hover:text-white uppercase cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!rejectReason.trim()}
+                onClick={() => {
+                  if (!rejectReason.trim()) {
+                    setRejectError('A reason is strictly mandatory when rejecting a leave request.');
+                    return;
+                  }
+                  if (onUpdateLeave) {
+                    onUpdateLeave(rejectModalLeave.id, 'Rejected', rejectReason.trim());
+                  }
+                  setRejectModalLeave(null);
+                  setRejectReason('');
+                  setRejectError(null);
+                }}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider rounded-sm shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+              >
+                <X size={14} strokeWidth={3} /> Confirm Rejection
+              </button>
             </div>
           </div>
         </div>

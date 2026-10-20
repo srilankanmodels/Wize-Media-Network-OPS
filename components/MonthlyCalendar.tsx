@@ -4,7 +4,7 @@ import {
   Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Clock, 
   Target, CheckCircle2, AlertCircle, Users, X, MapPin, Eye, Filter,
   ExternalLink, Video, Trash2, Check, RefreshCw, Mail, LogOut,
-  Sparkles, Tag, ShieldCheck
+  Sparkles, Tag, ShieldCheck, UserCheck
 } from 'lucide-react';
 import { 
   fetchCalendarEvents, 
@@ -398,23 +398,24 @@ const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
   const weekDayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
   return (
-    <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm overflow-hidden space-y-0">
-      {/* Calendar Header Bar */}
-      <div className="p-6 bg-[#0e0f14] border-b border-neutral-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+    <div className="liquid-glass-card hud-frame border border-[var(--jarvis-border)] rounded-sm overflow-hidden space-y-0 shadow-[0_0_40px_-10px_rgba(var(--jarvis-primary-rgb),0.2)]">
+      {/* Calendar Header Bar - Liquid Glass */}
+      <div className="p-6 bg-black/40 border-b border-[var(--jarvis-border)] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-sm bg-[#14151c] border border-neutral-700/80 flex items-center justify-center text-white">
+          <div className="w-10 h-10 rounded-sm bg-black/60 border border-[var(--jarvis-primary)] flex items-center justify-center text-[var(--jarvis-primary)] shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.3)]">
             <CalendarIcon size={20} />
           </div>
           <div>
-            <div className="font-mono text-[9px] text-neutral-400 uppercase tracking-[0.25em] flex items-center gap-2">
-              <span>TEMPORAL MATRIX // STRATEGIC HORIZON</span>
+            <div className="font-mono text-[9px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
+              <span>TEMPORAL MATRIX // STRATEGIC HORIZON // JARVIS MATRIX</span>
               {token && (
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse" />
               )}
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight font-heading flex items-center gap-2">
               <span>{monthNames[month]}</span>
-              <span className="text-neutral-500 font-light">{year}</span>
+              <span className="text-[var(--jarvis-primary)] font-light hud-glow-text">{year}</span>
             </h2>
           </div>
         </div>
@@ -463,12 +464,12 @@ const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
           )}
 
           {/* Grid vs Agenda */}
-          <div className="flex items-center bg-[#12141a] border border-neutral-800 rounded-sm p-0.5">
+          <div className="flex items-center bg-black/40 border border-[var(--jarvis-border)] rounded-sm p-0.5">
             <button
               type="button"
               onClick={() => setViewMode('grid')}
               className={`px-3 py-1.5 font-mono text-[10px] uppercase rounded-xs transition-all cursor-pointer ${
-                viewMode === 'grid' ? 'bg-white text-black font-black' : 'text-neutral-400 hover:text-white'
+                viewMode === 'grid' ? 'jarvis-btn-primary text-black font-black' : 'text-neutral-400 hover:text-white'
               }`}
             >
               Month Grid
@@ -477,7 +478,7 @@ const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
               type="button"
               onClick={() => setViewMode('agenda')}
               className={`px-3 py-1.5 font-mono text-[10px] uppercase rounded-xs transition-all cursor-pointer ${
-                viewMode === 'agenda' ? 'bg-white text-black font-black' : 'text-neutral-400 hover:text-white'
+                viewMode === 'agenda' ? 'jarvis-btn-primary text-black font-black' : 'text-neutral-400 hover:text-white'
               }`}
             >
               Day Agenda
@@ -485,7 +486,7 @@ const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
           </div>
 
           {/* Prev/Today/Next */}
-          <div className="flex items-center bg-[#12141a] border border-neutral-800 rounded-sm p-0.5">
+          <div className="flex items-center bg-black/40 border border-[var(--jarvis-border)] rounded-sm p-0.5">
             <button
               type="button"
               onClick={handlePrevMonth}
@@ -514,7 +515,7 @@ const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
           <button
             type="button"
             onClick={() => handleOpenAddModalForDate()}
-            className="px-4 py-2 bg-white text-black hover:bg-neutral-200 font-black font-mono text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-1.5 cursor-pointer shrink-0"
+            className="jarvis-btn-primary px-4 py-2 font-black font-mono text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-1.5 cursor-pointer shrink-0"
           >
             <Plus size={14} strokeWidth={3} /> Add Event
           </button>
@@ -848,10 +849,29 @@ const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
                       <div className="font-mono text-[10px] text-rose-400 uppercase font-bold">PERSONNEL ABSENCE / LEAVE</div>
                       <h4 className="font-heading font-black text-white text-base uppercase">{l.staffName}</h4>
                       <p className="font-mono text-[10px] text-neutral-400 uppercase">Type: {l.type} Leave // Reason: "{l.reason}"</p>
+                      {l.assignedWorkloadToName && (
+                        <p className="font-mono text-[10px] text-emerald-400 uppercase flex items-center gap-1 mt-0.5">
+                          <UserCheck size={11} /> Workload Handover: <strong className="text-white">{l.assignedWorkloadToName}</strong> ({l.assignedWorkloadToRole || 'Staff'})
+                        </p>
+                      )}
+                      {l.status === 'Approved' && (
+                        <p className="font-mono text-[9px] text-neutral-400 uppercase mt-0.5">
+                          Dual Approvals: {l.managerApproval?.approvedBy || 'Division Manager'} & {l.directorApproval?.approvedBy || 'Director'}
+                        </p>
+                      )}
+                      {l.status === 'Rejected' && l.rejectionReason && (
+                        <p className="font-mono text-[10px] text-rose-400 italic mt-0.5">
+                          Declined: "{l.rejectionReason}" {l.rejectedBy ? `by ${l.rejectedBy}` : ''}
+                        </p>
+                      )}
                     </div>
                   </div>
-                  <span className="font-mono text-[10px] px-2.5 py-1 bg-rose-950/60 border border-rose-500/40 text-rose-300 uppercase rounded-xs">
-                    {l.status}
+                  <span className={`font-mono text-[10px] px-2.5 py-1 uppercase rounded-xs border font-bold ${
+                    l.status === 'Approved' ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300' :
+                    l.status === 'Rejected' ? 'bg-rose-950/60 border-rose-500/40 text-rose-300' :
+                    'bg-amber-950/60 border-amber-500/40 text-amber-300'
+                  }`}>
+                    {l.status === 'Approved' ? '2/2 FULLY APPROVED' : l.status}
                   </span>
                 </div>
               ))}

@@ -10,7 +10,7 @@ import {
 interface HRDashboardProps {
   staffList: StaffMember[];
   leaveRequests: LeaveRequest[];
-  onUpdateLeave: (requestId: string, status: 'Approved' | 'Rejected', reviewNote?: string) => void;
+  onUpdateLeave: (requestId: string, status: 'Approved' | 'Rejected', reviewNote?: string, tier?: 'manager' | 'director' | 'both') => void;
   currentUser: StaffMember;
   onAddLeave: (request: Partial<LeaveRequest>) => void;
   onDeleteLeave?: (requestId: string) => void;
@@ -42,8 +42,14 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'Pending' | 'Approved' | 'Rejected'>('ALL');
   const [departmentFilter, setDepartmentFilter] = useState<string>('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [reviewModalRequest, setReviewModalRequest] = useState<{ req: LeaveRequest; action: 'Approved' | 'Rejected' } | null>(null);
+  const [reviewModalRequest, setReviewModalRequest] = useState<{ 
+    req: LeaveRequest; 
+    action: 'Approved' | 'Rejected'; 
+    tier?: 'manager' | 'director' | 'both'; 
+  } | null>(null);
   const [reviewNote, setReviewNote] = useState('');
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [leaveToDelete, setLeaveToDelete] = useState<LeaveRequest | null>(null);
 
   const [leaveForm, setLeaveForm] = useState<{
@@ -53,16 +59,53 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
     startDate: string;
     endDate: string;
     reason: string;
+    assignedWorkloadToId: string;
+    assignedWorkloadToName: string;
+    assignedWorkloadToRole: string;
   }>({
     staffId: currentUser.id,
     staffName: currentUser.name,
     type: 'Annual',
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date().toISOString().split('T')[0],
-    reason: ''
+    reason: '',
+    assignedWorkloadToId: '',
+    assignedWorkloadToName: '',
+    assignedWorkloadToRole: ''
   });
 
-  const canApprove = ([Role.ADMIN, Role.HR, Role.MANAGEMENT] as string[]).includes(currentUser.role);
+  const normRole = (currentUser.role || '').toLowerCase();
+  const normDept = (currentUser.department || '').toLowerCase();
+  const isSuperAdmin = normRole === 'super admin' || currentUser.role === Role.SUPER_ADMIN;
+  const isAdmin = isSuperAdmin || normRole === 'admin' || currentUser.role === Role.ADMIN;
+  const isGM = normRole === 'general manager' || normRole === 'gm' || currentUser.role === Role.GM;
+  const isDirector = normRole.includes('director') || normDept.includes('director') || isGM || isSuperAdmin;
+  const isHR = normRole === 'hr' || currentUser.role === Role.HR;
+
+  const canApprove = isSuperAdmin || isAdmin || isGM || isDirector || isHR || normRole.includes('manager') || normRole.includes('lead') || currentUser.role === Role.MANAGEMENT || normDept.includes('management');
+
+  // Check if current user can approve as Division Manager for this specific request
+  const canApproveAsManager = (req: LeaveRequest) => {
+    if (req.managerApproval?.approved) return false;
+    if (isSuperAdmin || isAdmin || isGM) return true;
+    const reqStaff = staffList.find(s => s.id === req.staffId);
+    const reqDept = (req.department || reqStaff?.department || '').toLowerCase();
+    const isDeptManager = (normRole.includes('manager') || normRole.includes('lead') || currentUser.role === Role.MANAGEMENT || normDept.includes('management')) &&
+      normDept === reqDept;
+    return isDeptManager;
+  };
+
+  // Check if current user can approve as Director for this specific request
+  const canApproveAsDirector = (req: LeaveRequest) => {
+    if (req.directorApproval?.approved) return false;
+    return isDirector || isSuperAdmin || isAdmin || isGM;
+  };
+
+  // Check if current user can reject this request
+  const canRejectLeave = (req: LeaveRequest) => {
+    if (req.status !== 'Pending') return false;
+    return canApproveAsManager(req) || canApproveAsDirector(req) || isHR || isSuperAdmin || isAdmin || isGM;
+  };
 
   // Departments list for filter
   const departments = useMemo(() => {
@@ -166,14 +209,25 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
       type: 'Annual',
       startDate: new Date().toISOString().split('T')[0],
       endDate: new Date().toISOString().split('T')[0],
-      reason: ''
+      reason: '',
+      assignedWorkloadToId: '',
+      assignedWorkloadToName: '',
+      assignedWorkloadToRole: ''
     });
+    setFormError(null);
     setIsModalOpen(true);
   };
 
   const handleSubmitRequest = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!leaveForm.reason.trim()) return;
+    if (!leaveForm.reason.trim()) {
+      setFormError('Please enter an operational justification or reason for this leave request.');
+      return;
+    }
+    if (!leaveForm.assignedWorkloadToId) {
+      setFormError('You must select a team member to assign your workload and cover duties during your absence.');
+      return;
+    }
 
     onAddLeave({
       staffId: leaveForm.staffId,
@@ -181,21 +235,31 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
       type: leaveForm.type,
       startDate: new Date(leaveForm.startDate),
       endDate: new Date(leaveForm.endDate),
-      reason: leaveForm.reason.trim()
+      reason: leaveForm.reason.trim(),
+      assignedWorkloadToId: leaveForm.assignedWorkloadToId,
+      assignedWorkloadToName: leaveForm.assignedWorkloadToName,
+      assignedWorkloadToRole: leaveForm.assignedWorkloadToRole
     });
 
     setIsModalOpen(false);
+    setFormError(null);
   };
 
   const handleConfirmReview = () => {
     if (!reviewModalRequest) return;
+    if (reviewModalRequest.action === 'Rejected' && !reviewNote.trim()) {
+      setReviewError('A reason is strictly mandatory when rejecting a leave request.');
+      return;
+    }
     onUpdateLeave(
       reviewModalRequest.req.id, 
       reviewModalRequest.action, 
-      reviewNote.trim() || undefined
+      reviewNote.trim() || undefined,
+      reviewModalRequest.tier
     );
     setReviewModalRequest(null);
     setReviewNote('');
+    setReviewError(null);
   };
 
   const handleConfirmDelete = () => {
@@ -239,11 +303,12 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 animate-in fade-in duration-500">
-      {/* Header Banner */}
-      <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-8 sm:p-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+      {/* Header Banner - Liquid Glass */}
+      <div className="liquid-glass-card hud-frame rounded-sm p-8 sm:p-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 shadow-[0_0_40px_-10px_rgba(var(--jarvis-primary-rgb),0.2)]">
         <div>
-          <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-[0.25em] mb-2 flex items-center gap-2">
-            <span>PROPRIETARY ECOSYSTEM // HR MANAGEMENT</span>
+          <div className="font-mono text-[10px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] mb-2 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
+            <span>PROPRIETARY ECOSYSTEM // HR MANAGEMENT // JARVIS MATRIX</span>
             {canApprove && (
               <span className="px-2 py-0.5 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[9px] rounded-xs font-bold">
                 HR GOVERNANCE ACTIVE
@@ -251,27 +316,27 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
             )}
           </div>
           <h1 className="text-3xl sm:text-5xl font-black text-white uppercase tracking-tight font-heading leading-none">
-            PEOPLE <span className="text-neutral-500">& LEAVE PORTAL</span>
+            PEOPLE <span className="text-[var(--jarvis-primary)] hud-glow-text">& LEAVE PORTAL</span>
           </h1>
-          <p className="text-neutral-400 text-xs font-mono uppercase tracking-wider mt-3">
+          <p className="text-neutral-300 text-xs font-mono uppercase tracking-wider mt-3">
             Employee HR Management, Absence Tracking, Quotas & Executive Approvals
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          <div className="px-5 py-3 bg-[#12141a] border border-neutral-800 rounded-sm font-mono text-left">
-            <div className="text-[9px] text-neutral-400 uppercase tracking-widest">PENDING APPROVALS</div>
-            <div className="text-2xl font-black text-amber-400 leading-none mt-1">{pendingApprovals.length}</div>
+          <div className="px-6 py-3 bg-black/50 border border-[var(--jarvis-border)] rounded-sm font-mono text-left shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.15)]">
+            <div className="text-[9px] text-[var(--jarvis-primary)] uppercase tracking-widest font-bold">PENDING APPROVALS</div>
+            <div className="text-2xl font-black text-amber-400 leading-none mt-1 font-mono">{pendingApprovals.length}</div>
           </div>
 
-          <div className="px-5 py-3 bg-[#12141a] border border-neutral-800 rounded-sm font-mono text-left">
-            <div className="text-[9px] text-neutral-400 uppercase tracking-widest">ON LEAVE TODAY</div>
-            <div className="text-2xl font-black text-white leading-none mt-1">{currentlyOnLeave.length}</div>
+          <div className="px-6 py-3 bg-black/50 border border-[var(--jarvis-border)] rounded-sm font-mono text-left shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.15)]">
+            <div className="text-[9px] text-[var(--jarvis-primary)] uppercase tracking-widest font-bold">ON LEAVE TODAY</div>
+            <div className="text-2xl font-black text-white leading-none mt-1 font-mono">{currentlyOnLeave.length}</div>
           </div>
 
           <button 
             onClick={() => handleOpenAddModal()}
-            className="bg-white text-black hover:bg-neutral-200 px-6 py-3.5 font-black text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer"
+            className="jarvis-btn-primary px-6 py-3.5 font-black text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer"
           >
             <Plus size={16} strokeWidth={3} /> REQUEST LEAVE
           </button>
@@ -279,7 +344,7 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
       </div>
 
       {/* Tabs Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-800 pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--jarvis-border)] pb-4">
         <div className="flex flex-wrap items-center gap-2">
           {[
             { id: 'overview', label: 'HR Overview & Roster', icon: CalendarDays },
@@ -295,8 +360,8 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
                 onClick={() => { setActiveTab(tab.id as any); setSearchTerm(''); }}
                 className={`px-5 py-2.5 rounded-sm font-mono text-xs uppercase tracking-wider transition-all flex items-center gap-2 border cursor-pointer ${
                   activeTab === tab.id
-                    ? 'bg-white text-black font-black border-white shadow-md'
-                    : 'bg-[#0a0b0e] text-neutral-400 hover:text-white border-neutral-800 hover:border-neutral-700'
+                    ? 'jarvis-btn-primary text-black font-black shadow-md'
+                    : 'bg-black/40 text-neutral-400 hover:text-white border-[var(--jarvis-border)] hover:border-[var(--jarvis-primary)]'
                 }`}
               >
                 <Icon size={14} />
@@ -317,29 +382,29 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
         <div className="space-y-8 animate-in fade-in duration-300">
           {/* Quick Stats Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-5 space-y-2">
+            <div className="liquid-glass-card border border-[var(--jarvis-border)] rounded-sm p-5 space-y-2 shadow-[0_0_20px_-5px_rgba(var(--jarvis-primary-rgb),0.15)]">
               <div className="flex items-center justify-between text-neutral-400 font-mono text-[10px] uppercase tracking-widest">
                 <span>Active On Leave Today</span>
                 <UserX size={16} className="text-rose-400" />
               </div>
               <div className="text-3xl font-black text-white font-heading">{currentlyOnLeave.length}</div>
-              <div className="text-[10px] font-mono text-neutral-500">
+              <div className="text-[10px] font-mono text-neutral-400">
                 Out of {staffList.length} total active personnel
               </div>
             </div>
 
-            <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-5 space-y-2">
+            <div className="liquid-glass-card border border-[var(--jarvis-border)] rounded-sm p-5 space-y-2 shadow-[0_0_20px_-5px_rgba(var(--jarvis-primary-rgb),0.15)]">
               <div className="flex items-center justify-between text-neutral-400 font-mono text-[10px] uppercase tracking-widest">
                 <span>Pending Approvals</span>
                 <Clock size={16} className="text-amber-400" />
               </div>
               <div className="text-3xl font-black text-amber-400 font-heading">{pendingApprovals.length}</div>
-              <div className="text-[10px] font-mono text-neutral-500">
+              <div className="text-[10px] font-mono text-neutral-400">
                 Awaiting HR / Management review
               </div>
             </div>
 
-            <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-5 space-y-2">
+            <div className="liquid-glass-card border border-[var(--jarvis-border)] rounded-sm p-5 space-y-2 shadow-[0_0_20px_-5px_rgba(var(--jarvis-primary-rgb),0.15)]">
               <div className="flex items-center justify-between text-neutral-400 font-mono text-[10px] uppercase tracking-widest">
                 <span>My Annual Leave Balance</span>
                 <Award size={16} className="text-emerald-400" />
@@ -347,18 +412,18 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
               <div className="text-3xl font-black text-emerald-400 font-heading">
                 {myQuota.annualRemaining} <span className="text-xs text-neutral-400 font-mono">/ {ANNUAL_LEAVE_ALLOWANCE} DAYS</span>
               </div>
-              <div className="text-[10px] font-mono text-neutral-500">
+              <div className="text-[10px] font-mono text-neutral-400">
                 {myQuota.annualTaken} days utilized this annual cycle
               </div>
             </div>
 
-            <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-5 space-y-2">
+            <div className="liquid-glass-card border border-[var(--jarvis-border)] rounded-sm p-5 space-y-2 shadow-[0_0_20px_-5px_rgba(var(--jarvis-primary-rgb),0.15)]">
               <div className="flex items-center justify-between text-neutral-400 font-mono text-[10px] uppercase tracking-widest">
                 <span>Total Leave Records</span>
-                <Layers size={16} className="text-sky-400" />
+                <Layers size={16} className="text-[var(--jarvis-primary)]" />
               </div>
               <div className="text-3xl font-black text-white font-heading">{leaveRequests.length}</div>
-              <div className="text-[10px] font-mono text-neutral-500">
+              <div className="text-[10px] font-mono text-neutral-400">
                 {leaveRequests.filter(l => l.status === 'Approved').length} approved leaves logged
               </div>
             </div>
@@ -527,16 +592,33 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
                 return (
                   <div 
                     key={req.id} 
-                    className="bg-[#0a0b0e] border border-neutral-800 hover:border-neutral-700 rounded-sm p-6 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 transition-colors"
+                    className="bg-[#0a0b0e] border border-neutral-800 hover:border-neutral-700 rounded-sm p-6 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6 transition-colors shadow-sm"
                   >
-                    <div className="flex items-center gap-5 min-w-0 lg:w-1/3 shrink-0">
-                      <div className="w-14 h-14 rounded-sm bg-[#12141a] border border-neutral-700 overflow-hidden shrink-0">
+                    <div className="flex items-start gap-4 min-w-0 xl:w-1/3 shrink-0">
+                      <div className="w-12 h-12 rounded-sm bg-[#12141a] border border-neutral-700 overflow-hidden shrink-0 mt-0.5">
                         <img src={staff?.avatarUrl} className="w-full h-full object-cover" alt="" />
                       </div>
                       <div className="min-w-0">
-                        <p className="font-heading font-black text-white uppercase text-base truncate">{req.staffName}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-heading font-black text-white uppercase text-base truncate">{req.staffName}</p>
+                          <span className={`px-2 py-0.5 rounded-xs font-mono text-[9px] uppercase font-bold border ${
+                            req.status === 'Approved' 
+                              ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300' 
+                              : req.status === 'Rejected'
+                                ? 'bg-rose-950/80 border-rose-500/40 text-rose-300'
+                                : (req.managerApproval?.approved || req.directorApproval?.approved)
+                                  ? 'bg-sky-950/80 border-sky-500/40 text-sky-300'
+                                  : 'bg-amber-950/80 border-amber-500/40 text-amber-300'
+                          }`}>
+                            {req.status === 'Approved' ? '2/2 FULLY APPROVED' :
+                             req.status === 'Rejected' ? 'REJECTED' :
+                             (req.managerApproval?.approved && !req.directorApproval?.approved) ? '1/2 APPROVED (AWAITING DIRECTOR)' :
+                             (!req.managerApproval?.approved && req.directorApproval?.approved) ? '1/2 APPROVED (AWAITING MANAGER)' :
+                             '0/2 APPROVALS (PENDING)'}
+                          </span>
+                        </div>
                         <div className="font-mono text-[10px] text-neutral-400 uppercase mt-0.5">
-                          {staff?.role || 'Staff'} // {staff?.department || 'Agency'}
+                          {staff?.role || 'Staff'} // {req.department || staff?.department || 'Agency'}
                         </div>
                         <div className="flex items-center gap-2 mt-2 font-mono text-[9px] uppercase">
                           <span className="px-2 py-0.5 rounded-sm bg-[#12141a] text-neutral-300 border border-neutral-800 font-bold">
@@ -549,42 +631,195 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex-1 min-w-0 font-mono text-xs text-neutral-300 space-y-2">
+                    <div className="flex-1 min-w-0 font-mono text-xs text-neutral-300 space-y-3 w-full xl:w-auto">
                       <div className="flex flex-wrap items-center gap-4 text-[11px] text-neutral-400">
                         <span>PERIOD: <strong className="text-white">{new Date(req.startDate).toLocaleDateString()}</strong> TO <strong className="text-white">{new Date(req.endDate).toLocaleDateString()}</strong></span>
                         <span className="px-2 py-0.5 bg-[#14151c] border border-neutral-800 text-neutral-200 rounded-xs font-bold">
                           {days} {days === 1 ? 'DAY' : 'DAYS'}
                         </span>
                       </div>
+
                       <div className="p-3 bg-[#12141a] border border-neutral-800/80 rounded-sm text-neutral-300 text-xs italic font-sans">
                         "{req.reason}"
                       </div>
-                      {req.reviewNote && (
-                        <div className="text-[10px] text-neutral-400 font-mono flex items-center gap-1.5 pt-1">
-                          <span className="text-neutral-500 uppercase">Review Directive:</span>
+
+                      {/* Workload Handover Assignee */}
+                      <div className="flex items-center gap-2 px-3 py-2 bg-[#0d0f14] border border-neutral-800 rounded-sm text-xs">
+                        <UserCheck size={14} className="text-emerald-400 shrink-0" />
+                        <span className="text-neutral-400 text-[10px] uppercase tracking-wider">Workload Coverage:</span>
+                        {req.assignedWorkloadToName ? (
+                          <span className="text-white font-bold text-[11px]">
+                            {req.assignedWorkloadToName} <span className="text-neutral-400 font-normal">({req.assignedWorkloadToRole || 'Staff'})</span>
+                          </span>
+                        ) : (
+                          <span className="text-amber-400/80 italic text-[11px]">Unassigned (Pre-directive)</span>
+                        )}
+                      </div>
+
+                      {/* Two-Tier Approvals Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 font-mono text-[10px]">
+                        {/* Tier 1: Division Manager */}
+                        <div className={`p-2.5 rounded-sm border flex items-center justify-between gap-2 ${
+                          req.managerApproval?.approved 
+                            ? 'bg-emerald-950/20 border-emerald-500/40 text-emerald-300' 
+                            : req.status === 'Rejected'
+                              ? 'bg-neutral-900/40 border-neutral-800 text-neutral-500'
+                              : 'bg-amber-950/20 border-amber-500/30 text-amber-300'
+                        }`}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            {req.managerApproval?.approved ? (
+                              <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+                            ) : (
+                              <Clock size={14} className="text-amber-400 shrink-0" />
+                            )}
+                            <div className="min-w-0 truncate">
+                              <div className="font-bold uppercase tracking-wider text-[9px]">1. Division Manager</div>
+                              <div className="truncate text-white text-[10px] mt-0.5">
+                                {req.managerApproval?.approved 
+                                  ? `${req.managerApproval.approvedBy} (${new Date(req.managerApproval.timestamp).toLocaleDateString()})` 
+                                  : 'Pending Sign-off'}
+                              </div>
+                            </div>
+                          </div>
+                          {req.managerApproval?.approved ? (
+                            <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-xs text-[8px] font-bold uppercase shrink-0">
+                              SIGNED
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-xs text-[8px] font-bold uppercase shrink-0">
+                              PENDING
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Tier 2: Director */}
+                        <div className={`p-2.5 rounded-sm border flex items-center justify-between gap-2 ${
+                          req.directorApproval?.approved 
+                            ? 'bg-emerald-950/20 border-emerald-500/40 text-emerald-300' 
+                            : req.status === 'Rejected'
+                              ? 'bg-neutral-900/40 border-neutral-800 text-neutral-500'
+                              : 'bg-amber-950/20 border-amber-500/30 text-amber-300'
+                        }`}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            {req.directorApproval?.approved ? (
+                              <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+                            ) : (
+                              <Clock size={14} className="text-amber-400 shrink-0" />
+                            )}
+                            <div className="min-w-0 truncate">
+                              <div className="font-bold uppercase tracking-wider text-[9px]">2. Director</div>
+                              <div className="truncate text-white text-[10px] mt-0.5">
+                                {req.directorApproval?.approved 
+                                  ? `${req.directorApproval.approvedBy} (${new Date(req.directorApproval.timestamp).toLocaleDateString()})` 
+                                  : 'Pending Sign-off'}
+                              </div>
+                            </div>
+                          </div>
+                          {req.directorApproval?.approved ? (
+                            <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-xs text-[8px] font-bold uppercase shrink-0">
+                              SIGNED
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-xs text-[8px] font-bold uppercase shrink-0">
+                              PENDING
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Rejection Banner */}
+                      {req.status === 'Rejected' && (
+                        <div className="p-3 bg-rose-950/30 border border-rose-500/40 rounded-sm text-xs space-y-1 animate-in fade-in">
+                          <div className="flex items-center gap-1.5 text-[10px] text-rose-400 font-bold uppercase">
+                            <ShieldAlert size={14} />
+                            <span>Rejection Reason (Mandatory):</span>
+                          </div>
+                          <p className="text-rose-200 text-xs italic font-sans pl-5">
+                            "{req.rejectionReason || req.reviewNote || 'Absence rejected per operational review'}"
+                          </p>
+                          {req.rejectedBy && (
+                            <div className="text-[9px] text-neutral-400 pl-5">
+                              Declined by: <strong className="text-neutral-300">{req.rejectedBy}</strong> {req.rejectedByRole ? `(${req.rejectedByRole})` : ''} {req.rejectedAt ? `on ${new Date(req.rejectedAt).toLocaleDateString()}` : ''}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Approval Note */}
+                      {req.status === 'Approved' && req.reviewNote && (
+                        <div className="text-[10px] text-neutral-400 font-mono flex items-center gap-1.5">
+                          <span className="text-neutral-500 uppercase">Approval Record:</span>
                           <span className="text-neutral-300">"{req.reviewNote}"</span>
-                          {req.reviewedBy && <span className="text-neutral-500">({req.reviewedBy})</span>}
                         </div>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0 self-end lg:self-center">
+                    <div className="flex flex-col sm:flex-row xl:flex-col items-stretch xl:items-end gap-2 shrink-0 self-stretch xl:self-center">
                       {req.status === 'Pending' ? (
                         <>
-                          <button 
-                            type="button"
-                            onClick={() => { setReviewModalRequest({ req, action: 'Approved' }); setReviewNote(''); }} 
-                            className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-black font-mono text-xs uppercase tracking-wider rounded-sm transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
-                          >
-                            <Check size={14} strokeWidth={3} /> Approve
-                          </button>
-                          <button 
-                            type="button"
-                            onClick={() => { setReviewModalRequest({ req, action: 'Rejected' }); setReviewNote(''); }} 
-                            className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-mono text-xs uppercase tracking-wider rounded-sm transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
-                          >
-                            <X size={14} strokeWidth={3} /> Reject
-                          </button>
+                          {/* Approve as Division Manager */}
+                          {!req.managerApproval?.approved && canApproveAsManager(req) && (
+                            <button 
+                              type="button"
+                              onClick={() => { 
+                                setReviewModalRequest({ req, action: 'Approved', tier: 'manager' }); 
+                                setReviewNote(''); 
+                                setReviewError(null); 
+                              }} 
+                              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black font-black font-mono text-xs uppercase tracking-wider rounded-sm transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+                              title="Sign off as Division Manager (Approval 1 of 2)"
+                            >
+                              <Check size={14} strokeWidth={3} /> Approve (Manager)
+                            </button>
+                          )}
+
+                          {/* Approve as Director */}
+                          {!req.directorApproval?.approved && canApproveAsDirector(req) && (
+                            <button 
+                              type="button"
+                              onClick={() => { 
+                                setReviewModalRequest({ req, action: 'Approved', tier: 'director' }); 
+                                setReviewNote(''); 
+                                setReviewError(null); 
+                              }} 
+                              className="px-4 py-2 bg-sky-500 hover:bg-sky-400 text-black font-black font-mono text-xs uppercase tracking-wider rounded-sm transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+                              title="Sign off as Director (Approval 2 of 2)"
+                            >
+                              <Check size={14} strokeWidth={3} /> Approve (Director)
+                            </button>
+                          )}
+
+                          {/* Approve Both (Super Admin / Admin / GM override when both pending) */}
+                          {(isSuperAdmin || isAdmin || isGM) && !req.managerApproval?.approved && !req.directorApproval?.approved && (
+                            <button 
+                              type="button"
+                              onClick={() => { 
+                                setReviewModalRequest({ req, action: 'Approved', tier: 'both' }); 
+                                setReviewNote('Executive dual-signoff granted'); 
+                                setReviewError(null); 
+                              }} 
+                              className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-emerald-400 border border-emerald-500/40 font-mono text-[10px] uppercase tracking-wider rounded-sm transition-all flex items-center justify-center gap-1 cursor-pointer"
+                              title="Authorize Both Division Manager & Director Sign-offs Simultaneously"
+                            >
+                              <ShieldCheck size={13} /> Authorize Both (Dual)
+                            </button>
+                          )}
+
+                          {/* Reject with Mandatory Reason */}
+                          {canRejectLeave(req) && (
+                            <button 
+                              type="button"
+                              onClick={() => { 
+                                setReviewModalRequest({ req, action: 'Rejected' }); 
+                                setReviewNote(''); 
+                                setReviewError(null); 
+                              }} 
+                              className="px-4 py-2 bg-rose-600/90 hover:bg-rose-500 text-white font-mono text-xs uppercase tracking-wider rounded-sm transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-95 cursor-pointer"
+                              title="Decline leave request (Reason Mandatory)"
+                            >
+                              <X size={14} strokeWidth={3} /> Reject (Give Reason)
+                            </button>
+                          )}
                         </>
                       ) : (
                         <div className="flex items-center gap-2">
@@ -599,7 +834,7 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
                             <button
                               type="button"
                               onClick={() => setLeaveToDelete(req)}
-                              className="p-2 text-neutral-400 hover:text-rose-400 rounded-sm hover:bg-neutral-900 transition-colors"
+                              className="p-2 text-neutral-400 hover:text-rose-400 rounded-sm hover:bg-neutral-900 transition-colors cursor-pointer"
                               title="Delete Leave Record"
                             >
                               <Trash2 size={14} />
@@ -804,7 +1039,7 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
                     className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6"
                   >
                     <div className="min-w-0 md:w-1/3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-heading font-black text-white uppercase text-base">{req.type} Leave</span>
                         <span className="font-mono text-[10px] px-2 py-0.5 bg-[#12141a] border border-neutral-800 text-neutral-300 rounded-xs">
                           {days} {days === 1 ? 'DAY' : 'DAYS'}
@@ -813,18 +1048,75 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
                       <div className="font-mono text-[10px] text-neutral-400 uppercase mt-1">
                         Requested on {new Date(req.timestamp).toLocaleDateString()}
                       </div>
+                      <div className="mt-2">
+                        <span className={`px-2 py-0.5 rounded-xs font-mono text-[9px] uppercase font-bold border ${
+                          req.status === 'Approved' 
+                            ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300' 
+                            : req.status === 'Rejected'
+                              ? 'bg-rose-950/80 border-rose-500/40 text-rose-300'
+                              : (req.managerApproval?.approved || req.directorApproval?.approved)
+                                ? 'bg-sky-950/80 border-sky-500/40 text-sky-300'
+                                : 'bg-amber-950/80 border-amber-500/40 text-amber-300'
+                        }`}>
+                          {req.status === 'Approved' ? '2/2 FULLY APPROVED' :
+                           req.status === 'Rejected' ? 'REJECTED' :
+                           (req.managerApproval?.approved && !req.directorApproval?.approved) ? '1/2 APPROVED (AWAITING DIRECTOR)' :
+                           (!req.managerApproval?.approved && req.directorApproval?.approved) ? '1/2 APPROVED (AWAITING MANAGER)' :
+                           '0/2 APPROVALS (PENDING)'}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex-1 min-w-0 font-mono text-xs text-neutral-300 space-y-1.5">
+                    <div className="flex-1 min-w-0 font-mono text-xs text-neutral-300 space-y-2">
                       <div className="text-[11px] text-neutral-400">
                         FROM: <strong className="text-white">{new Date(req.startDate).toLocaleDateString()}</strong> TO: <strong className="text-white">{new Date(req.endDate).toLocaleDateString()}</strong>
                       </div>
                       <div className="p-2.5 bg-[#12141a] border border-neutral-800/80 rounded-sm italic font-sans text-xs">
                         "{req.reason}"
                       </div>
-                      {req.reviewNote && (
-                        <div className="text-[10px] text-neutral-400 font-mono pt-1">
-                          <span className="text-neutral-500 uppercase">Reviewer Note:</span> "{req.reviewNote}"
+
+                      {/* Workload Handover */}
+                      <div className="flex items-center gap-2 p-2 bg-[#0c0e14] border border-neutral-800 rounded-sm text-[11px]">
+                        <UserCheck size={13} className="text-emerald-400 shrink-0" />
+                        <span className="text-neutral-400 uppercase text-[9px]">Workload Coverage:</span>
+                        {req.assignedWorkloadToName ? (
+                          <span className="text-white font-bold">
+                            {req.assignedWorkloadToName} <span className="text-neutral-400 font-normal">({req.assignedWorkloadToRole || 'Staff'})</span>
+                          </span>
+                        ) : (
+                          <span className="text-amber-400/80 italic text-[10px]">Unassigned</span>
+                        )}
+                      </div>
+
+                      {/* Dual-approval status mini-grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[9px] pt-1">
+                        <div className={`p-1.5 rounded-xs border flex items-center justify-between ${
+                          req.managerApproval?.approved ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300' : 'bg-neutral-900 border-neutral-800 text-neutral-400'
+                        }`}>
+                          <span>1. Division Manager:</span>
+                          <strong>{req.managerApproval?.approved ? `Signed (${req.managerApproval.approvedBy})` : 'Pending'}</strong>
+                        </div>
+                        <div className={`p-1.5 rounded-xs border flex items-center justify-between ${
+                          req.directorApproval?.approved ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-300' : 'bg-neutral-900 border-neutral-800 text-neutral-400'
+                        }`}>
+                          <span>2. Director:</span>
+                          <strong>{req.directorApproval?.approved ? `Signed (${req.directorApproval.approvedBy})` : 'Pending'}</strong>
+                        </div>
+                      </div>
+
+                      {/* Rejection Details */}
+                      {req.status === 'Rejected' && (
+                        <div className="p-3 bg-rose-950/40 border border-rose-500/40 rounded-sm text-xs font-mono text-rose-300 space-y-1">
+                          <div className="font-bold flex items-center gap-1.5 text-[10px] uppercase text-rose-400">
+                            <ShieldAlert size={13} />
+                            <span>Rejection Reason (Mandatory):</span>
+                          </div>
+                          <p className="italic pl-5 font-sans">"{req.rejectionReason || req.reviewNote || 'Absence declined'}"</p>
+                          {req.rejectedBy && (
+                            <div className="text-[9px] text-neutral-400 pl-5">
+                              Declined by: {req.rejectedBy} {req.rejectedByRole ? `(${req.rejectedByRole})` : ''}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -842,7 +1134,7 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
                         <button
                           type="button"
                           onClick={() => setLeaveToDelete(req)}
-                          className="p-2 text-neutral-400 hover:text-rose-400 rounded-sm hover:bg-neutral-900 transition-colors"
+                          className="p-2 text-neutral-400 hover:text-rose-400 rounded-sm hover:bg-neutral-900 transition-colors cursor-pointer"
                           title="Cancel / Delete Request"
                         >
                           <Trash2 size={14} />
@@ -952,30 +1244,49 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
             </div>
 
             <form onSubmit={handleSubmitRequest} className="p-6 space-y-4">
-              {/* Employee Selection (if HR/Admin) */}
-              {canApprove && (
-                <div>
-                  <label className="block font-mono text-[10px] text-neutral-400 uppercase tracking-widest mb-1.5">
-                    Target Personnel
-                  </label>
-                  <select
-                    value={leaveForm.staffId}
-                    onChange={(e) => {
-                      const selected = staffList.find(s => s.id === e.target.value);
-                      if (selected) {
-                        setLeaveForm({ ...leaveForm, staffId: selected.id, staffName: selected.name });
-                      }
-                    }}
-                    className="w-full px-4 py-2.5 bg-[#12141a] border border-neutral-800 font-mono text-xs text-white outline-none focus:border-white rounded-sm"
-                  >
-                    {staffList.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.role} - {s.department})
-                      </option>
-                    ))}
-                  </select>
+              {/* Applicant Capture Box (Automatic) */}
+              <div className="p-3 bg-[#12141a] border border-neutral-800 rounded-sm font-mono text-xs">
+                <div className="text-[10px] text-neutral-400 uppercase tracking-widest flex items-center justify-between mb-1.5">
+                  <span className="flex items-center gap-1.5 font-bold text-white">
+                    <UserCheck size={13} className="text-emerald-400" /> Applicant Identity
+                  </span>
+                  <span className="px-1.5 py-0.5 bg-emerald-950/80 border border-emerald-500/30 text-emerald-400 text-[8px] rounded-xs font-bold uppercase tracking-wider">
+                    Captured Automatically
+                  </span>
                 </div>
-              )}
+                {canApprove ? (
+                  <div>
+                    <label className="block text-[9px] text-neutral-500 uppercase mb-1">Applying on behalf of:</label>
+                    <select
+                      value={leaveForm.staffId}
+                      onChange={(e) => {
+                        const selected = staffList.find(s => s.id === e.target.value);
+                        if (selected) {
+                          setLeaveForm({ ...leaveForm, staffId: selected.id, staffName: selected.name });
+                        }
+                      }}
+                      className="w-full px-3 py-2 bg-[#0a0b0e] border border-neutral-700 font-mono text-xs text-white outline-none focus:border-white rounded-sm"
+                    >
+                      {staffList.map(s => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.role} — {s.department})
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-1 text-[9px] text-neutral-400">
+                      Logged-in Submitter: <strong className="text-white">{currentUser.name}</strong> ({currentUser.role} // {currentUser.department})
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between pt-0.5">
+                    <div>
+                      <span className="text-white font-bold">{currentUser.name}</span>
+                      <span className="text-neutral-400 text-[11px] ml-1.5">({currentUser.role} // {currentUser.department})</span>
+                    </div>
+                    <div className="text-[9px] text-neutral-500 font-mono">STAFF ID: {currentUser.staffId || currentUser.id}</div>
+                  </div>
+                )}
+              </div>
 
               <div>
                 <label className="block font-mono text-[10px] text-neutral-400 uppercase tracking-widest mb-1.5">Leave Classification</label>
@@ -1027,6 +1338,64 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
                 </span>
               </div>
 
+              {/* Workload Handover / Duty Coverage Assignee Selection (Mandatory) */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-mono text-[10px] text-neutral-400 uppercase tracking-widest flex items-center gap-1.5">
+                    <UserCheck size={13} className="text-emerald-400" />
+                    <span>Assign Workload / Cover Duties To *</span>
+                  </label>
+                  <span className="text-[9px] font-mono text-emerald-400 uppercase font-semibold">
+                    Mandatory Protocol
+                  </span>
+                </div>
+                <select
+                  required
+                  value={leaveForm.assignedWorkloadToId}
+                  onChange={(e) => {
+                    const selected = staffList.find(s => s.id === e.target.value);
+                    if (selected) {
+                      setLeaveForm(prev => ({
+                        ...prev,
+                        assignedWorkloadToId: selected.id,
+                        assignedWorkloadToName: selected.name,
+                        assignedWorkloadToRole: selected.role
+                      }));
+                      setFormError(null);
+                    } else {
+                      setLeaveForm(prev => ({
+                        ...prev,
+                        assignedWorkloadToId: '',
+                        assignedWorkloadToName: '',
+                        assignedWorkloadToRole: ''
+                      }));
+                    }
+                  }}
+                  className="w-full px-4 py-2.5 bg-[#12141a] border border-neutral-800 focus:border-white font-mono text-xs text-white outline-none rounded-sm transition-colors cursor-pointer"
+                >
+                  <option value="">SELECT TEAM MEMBER TO COVER WORKLOAD...</option>
+                  {staffList
+                    .filter(s => s.id !== leaveForm.staffId)
+                    .map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} — {s.role} (Division: {s.department})
+                      </option>
+                    ))}
+                </select>
+                {leaveForm.assignedWorkloadToName ? (
+                  <div className="mt-1.5 text-[10px] font-mono text-neutral-400 flex items-center gap-1.5 bg-emerald-950/20 border border-emerald-500/20 px-2.5 py-1 rounded-xs">
+                    <UserCheck size={11} className="text-emerald-400" />
+                    <span>Workload designated to:</span>
+                    <strong className="text-white uppercase">{leaveForm.assignedWorkloadToName}</strong>
+                    <span>({leaveForm.assignedWorkloadToRole})</span>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-[9px] font-mono text-neutral-500">
+                    A colleague must be designated to ensure project and task continuity during absence.
+                  </p>
+                )}
+              </div>
+
               <div>
                 <label className="block font-mono text-[10px] text-neutral-400 uppercase tracking-widest mb-1">Operational Justification / Reason *</label>
                 <textarea 
@@ -1035,9 +1404,16 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
                   placeholder="Details regarding your absence protocol, handover, or coverage..." 
                   className="w-full px-4 py-2.5 bg-[#12141a] border border-neutral-800 font-mono text-xs text-white outline-none focus:border-white rounded-sm resize-none" 
                   value={leaveForm.reason}
-                  onChange={e => setLeaveForm({...leaveForm, reason: e.target.value})}
+                  onChange={e => { setLeaveForm({...leaveForm, reason: e.target.value}); setFormError(null); }}
                 />
               </div>
+
+              {formError && (
+                <div className="p-3 bg-rose-950/40 border border-rose-500/40 rounded-sm text-xs font-mono text-rose-300 flex items-center gap-2 animate-in fade-in">
+                  <AlertCircle size={14} className="shrink-0 text-rose-400" />
+                  <span>{formError}</span>
+                </div>
+              )}
 
               <div className="pt-3 border-t border-neutral-800 flex justify-end gap-3">
                 <button 
@@ -1073,15 +1449,15 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
                   {reviewModalRequest.action === 'Approved' ? <Check size={16} /> : <X size={16} />}
                 </div>
                 <div>
-                  <div className="font-mono text-[9px] uppercase tracking-widest text-neutral-400">HR REVIEW DIRECTIVE</div>
+                  <div className="font-mono text-[9px] uppercase tracking-widest text-neutral-400">LEAVE AUTHORIZATION AUDIT</div>
                   <h3 className="text-base font-black uppercase text-white font-heading">
                     {reviewModalRequest.action === 'Approved' ? 'Authorize Absence' : 'Decline Request'}
                   </h3>
                 </div>
               </div>
               <button 
-                type="button"
-                onClick={() => setReviewModalRequest(null)} 
+                type="button" 
+                onClick={() => { setReviewModalRequest(null); setReviewError(null); }} 
                 className="text-neutral-400 hover:text-white transition-colors cursor-pointer"
               >
                 <X size={18} />
@@ -1090,27 +1466,102 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
 
             <div className="p-6 space-y-4">
               <p className="text-xs text-neutral-300">
-                You are about to mark the <strong className="text-white">{reviewModalRequest.req.type} Leave</strong> requested by <strong className="text-white">{reviewModalRequest.req.staffName}</strong> ({new Date(reviewModalRequest.req.startDate).toLocaleDateString()} - {new Date(reviewModalRequest.req.endDate).toLocaleDateString()}) as <span className={reviewModalRequest.action === 'Approved' ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>{reviewModalRequest.action.toUpperCase()}</span>.
+                You are reviewing the <strong className="text-white">{reviewModalRequest.req.type} Leave</strong> requested by <strong className="text-white">{reviewModalRequest.req.staffName}</strong> ({new Date(reviewModalRequest.req.startDate).toLocaleDateString()} - {new Date(reviewModalRequest.req.endDate).toLocaleDateString()}).
               </p>
 
-              <div>
-                <label className="block font-mono text-[10px] text-neutral-400 uppercase tracking-widest mb-1.5">
-                  Review Directive / Note (Optional)
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder={reviewModalRequest.action === 'Approved' ? "e.g., Coverage approved by lead..." : "e.g., Operational sprint deadline conflict..."}
-                  className="w-full px-4 py-2.5 bg-[#12141a] border border-neutral-800 font-mono text-xs text-white outline-none focus:border-white rounded-sm resize-none"
-                  value={reviewNote}
-                  onChange={e => setReviewNote(e.target.value)}
-                />
-              </div>
+              {reviewModalRequest.action === 'Approved' ? (
+                <div className="space-y-3">
+                  <div className="p-3 bg-[#12141a] border border-neutral-800 rounded-sm font-mono text-xs text-neutral-300 space-y-1.5">
+                    <div className="text-[10px] text-neutral-400 uppercase tracking-wider flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 font-bold text-white">
+                        <UserCheck size={12} className="text-emerald-400" /> Approver Identity
+                      </span>
+                      <span className="px-1.5 py-0.5 bg-emerald-950/80 border border-emerald-500/30 text-emerald-400 text-[8px] rounded-xs font-bold uppercase tracking-wider">
+                        Captured Automatically
+                      </span>
+                    </div>
+                    <div className="text-white font-bold flex items-center gap-1.5">
+                      <ShieldCheck size={14} className="text-emerald-400" />
+                      <span>{currentUser.name}</span>
+                      <span className="text-neutral-400 font-normal text-[11px]">({currentUser.role} // {currentUser.department})</span>
+                    </div>
+                    <div className="text-[10px] text-neutral-400 pt-1 border-t border-neutral-800/80 flex items-center gap-1">
+                      <span>Sign-Off Tier:</span>
+                      <strong className="text-emerald-400">
+                        {reviewModalRequest.tier === 'manager'
+                          ? 'Tier 1: Division Manager Authorization'
+                          : reviewModalRequest.tier === 'director'
+                            ? 'Tier 2: Director Authorization'
+                            : 'Executive Dual Authorization'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-mono text-[10px] text-neutral-400 uppercase tracking-widest mb-1.5">
+                      Approval Directive / Note (Optional)
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="e.g., Workload handover verified; approved..."
+                      className="w-full px-4 py-2.5 bg-[#12141a] border border-neutral-800 font-mono text-xs text-white outline-none focus:border-white rounded-sm resize-none"
+                      value={reviewNote}
+                      onChange={e => setReviewNote(e.target.value)}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3 bg-[#12141a] border border-neutral-800 rounded-sm font-mono text-xs text-neutral-300 space-y-1.5">
+                    <div className="text-[10px] text-neutral-400 uppercase tracking-wider flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 font-bold text-white">
+                        <ShieldAlert size={12} className="text-rose-400" /> Reviewer Identity
+                      </span>
+                      <span className="px-1.5 py-0.5 bg-rose-950/80 border border-rose-500/30 text-rose-400 text-[8px] rounded-xs font-bold uppercase tracking-wider">
+                        Captured Automatically
+                      </span>
+                    </div>
+                    <div className="text-white font-bold flex items-center gap-1.5">
+                      <span>{currentUser.name}</span>
+                      <span className="text-neutral-400 font-normal text-[11px]">({currentUser.role} // {currentUser.department})</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-rose-950/20 border border-rose-500/30 rounded-sm text-xs font-mono text-rose-300 flex items-center gap-2">
+                    <AlertCircle size={14} className="text-rose-400 shrink-0" />
+                    <span>A rejection reason is strictly mandatory so the employee understands the operational conflict.</span>
+                  </div>
+
+                  <div>
+                    <label className="block font-mono text-[10px] text-rose-400 uppercase tracking-widest mb-1.5 flex items-center justify-between">
+                      <span className="font-bold flex items-center gap-1">
+                        <ShieldAlert size={12} />
+                        <span>Rejection Reason * (Mandatory)</span>
+                      </span>
+                      <span className="text-[9px] text-rose-400 font-semibold uppercase">Required</span>
+                    </label>
+                    <textarea
+                      required
+                      rows={3}
+                      placeholder="State the operational reason for declining this request (e.g. Sprint deadline, milestone conflict, inadequate coverage)..."
+                      className="w-full px-4 py-2.5 bg-[#12141a] border border-rose-500/60 focus:border-rose-400 font-mono text-xs text-white outline-none rounded-sm resize-none"
+                      value={reviewNote}
+                      onChange={e => { setReviewNote(e.target.value); setReviewError(null); }}
+                    />
+                    {reviewError && (
+                      <p className="mt-1.5 text-[11px] font-mono text-rose-400 flex items-center gap-1">
+                        <AlertCircle size={12} /> {reviewError}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="p-4 bg-[#0e0f14] border-t border-neutral-800 flex items-center justify-end gap-3">
               <button
                 type="button"
-                onClick={() => setReviewModalRequest(null)}
+                onClick={() => { setReviewModalRequest(null); setReviewError(null); }}
                 className="px-4 py-2 font-mono text-xs text-neutral-400 hover:text-white uppercase cursor-pointer"
               >
                 Cancel
@@ -1118,14 +1569,15 @@ const HRDashboard: React.FC<HRDashboardProps> = ({
               <button
                 type="button"
                 onClick={handleConfirmReview}
-                className={`px-5 py-2.5 font-black text-xs uppercase tracking-wider rounded-sm shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+                disabled={reviewModalRequest.action === 'Rejected' && !reviewNote.trim()}
+                className={`px-5 py-2.5 font-black text-xs uppercase tracking-wider rounded-sm shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                   reviewModalRequest.action === 'Approved'
                     ? 'bg-emerald-500 hover:bg-emerald-400 text-black'
                     : 'bg-rose-600 hover:bg-rose-500 text-white'
                 }`}
               >
                 {reviewModalRequest.action === 'Approved' ? <Check size={14} strokeWidth={3} /> : <X size={14} strokeWidth={3} />}
-                Confirm {reviewModalRequest.action}
+                Confirm {reviewModalRequest.action === 'Approved' ? 'Authorization' : 'Rejection'}
               </button>
             </div>
           </div>

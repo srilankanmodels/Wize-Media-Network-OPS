@@ -246,7 +246,7 @@ const JobRegistry: React.FC<JobRegistryProps> = ({
       </div>
 
       {/* Modern Table Layout */}
-      <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm overflow-hidden">
+      <div className="liquid-glass-card border border-[var(--jarvis-border)] rounded-sm overflow-hidden shadow-[0_0_20px_-5px_rgba(var(--jarvis-primary-rgb),0.12)]">
         {filteredProjects.length === 0 ? (
           <div className="py-24 text-center opacity-30 font-mono text-xs uppercase tracking-widest">
             <Archive size={48} className="mx-auto mb-3" />
@@ -255,7 +255,7 @@ const JobRegistry: React.FC<JobRegistryProps> = ({
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
-              <thead className="bg-[#0e0f14] border-b border-neutral-800 font-mono text-[9px] font-black uppercase text-neutral-400 tracking-[0.25em]">
+              <thead className="bg-black/40 border-b border-[var(--jarvis-border)] font-mono text-[9px] font-black uppercase text-neutral-300 tracking-[0.25em]">
                 <tr>
                   <th className="px-6 py-4">PROTOCOL ID</th>
                   <th className="px-6 py-4">CAMPAIGN METADATA</th>

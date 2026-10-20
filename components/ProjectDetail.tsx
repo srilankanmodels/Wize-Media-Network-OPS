@@ -348,8 +348,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     <div className="flex flex-col xl:flex-row gap-8 h-full items-start animate-in fade-in duration-500">
       <div className="flex-1 w-full space-y-8 min-w-0">
         
-        {/* Project Header matching Screenshot */}
-        <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-8 sm:p-10 relative overflow-hidden">
+        {/* Project Header - Liquid Glass */}
+        <div className="liquid-glass-card hud-frame border border-[var(--jarvis-border)] rounded-sm p-8 sm:p-10 relative overflow-hidden shadow-[0_0_40px_-10px_rgba(var(--jarvis-primary-rgb),0.2)]">
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
             <div className="flex items-start sm:items-center gap-5 flex-1 min-w-0">
               <button 

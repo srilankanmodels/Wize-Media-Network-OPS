@@ -184,6 +184,71 @@
         pointer-events: none;
       }
 
+      /* Universal Dynamic JARVIS Liquid Glass Theme Overrides */
+      /* These rules guarantee 100% theme propagation across EVERY page, card, modal, and table in the app */
+      .bg-\[\#0a0b0e\],
+      .bg-\[\#090a0d\],
+      .bg-\[\#0b0c10\],
+      .bg-\[\#0b0c0f\],
+      .bg-\[\#0e0f14\],
+      .bg-\[\#0e1017\],
+      .bg-\[\#10121a\],
+      .bg-\[\#101217\],
+      .bg-\[\#08090c\],
+      .bg-\[\#07080a\],
+      .bg-\[\#05070a\],
+      .bg-\[\#05070e\],
+      .bg-\[\#060709\] {
+        background: var(--jarvis-glass-bg, rgba(4, 7, 17, 0.85)) !important;
+        backdrop-filter: blur(var(--jarvis-blur, 24px)) saturate(160%);
+        -webkit-backdrop-filter: blur(var(--jarvis-blur, 24px)) saturate(160%);
+        border-color: var(--jarvis-border, rgba(0, 240, 255, 0.2)) !important;
+      }
+
+      .bg-\[\#12141a\],
+      .bg-\[\#14151c\],
+      .bg-\[\#14161f\],
+      .bg-\[\#141624\],
+      .bg-\[\#181a24\],
+      .bg-\[\#181a22\],
+      .bg-\[\#161822\] {
+        background-color: rgba(var(--jarvis-primary-rgb), 0.08) !important;
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border-color: var(--jarvis-border, rgba(0, 240, 255, 0.2)) !important;
+      }
+
+      .border-neutral-800,
+      .border-neutral-800\/80,
+      .border-neutral-800\/60,
+      .border-neutral-800\/50,
+      .border-neutral-900 {
+        border-color: var(--jarvis-border, rgba(0, 240, 255, 0.22)) !important;
+      }
+
+      .border-neutral-700,
+      .border-neutral-700\/80,
+      .border-neutral-700\/60 {
+        border-color: rgba(var(--jarvis-primary-rgb), 0.38) !important;
+      }
+
+      /* Dynamic focus borders and glow for text inputs & selectors */
+      input:focus, select:focus, textarea:focus {
+        border-color: var(--jarvis-primary) !important;
+        box-shadow: 0 0 15px -2px rgba(var(--jarvis-primary-rgb), 0.4) !important;
+      }
+
+      /* Dynamic hover for table rows */
+      tbody tr:hover {
+        background-color: rgba(var(--jarvis-primary-rgb), 0.06) !important;
+      }
+
+      /* Dynamic table head tint */
+      thead {
+        background-color: rgba(var(--jarvis-primary-rgb), 0.08) !important;
+        border-bottom: 1px solid var(--jarvis-border) !important;
+      }
+
       /* Dark Smooth Scrollbar with theme tint */
       ::-webkit-scrollbar {
         width: 6px;
@@ -193,15 +258,30 @@
         background: var(--jarvis-bg-dark, #040711);
       }
       ::-webkit-scrollbar-thumb {
-        background: rgba(var(--jarvis-primary-rgb), 0.25);
+        background: rgba(var(--jarvis-primary-rgb), 0.28);
         border-radius: 3px;
       }
       ::-webkit-scrollbar-thumb:hover {
         background: var(--jarvis-primary);
       }
     </style>
-  </head>
-  <body class="bg-[#060709] text-white antialiased bg-grid-pattern min-h-screen selection:bg-white selection:text-black">
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "vite": "https://aistudiocdn.com/vite@^7.2.4",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "firebase/": "https://esm.sh/firebase@^12.7.0/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+    "marked": "https://esm.sh/marked@12.0.0"
+  }
+}
+</script>
+</head>
+  <body class="text-white antialiased bg-grid-pattern min-h-screen selection:bg-white selection:text-black" style="background-color: var(--jarvis-bg-dark, #040711);">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

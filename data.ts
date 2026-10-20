@@ -77,9 +77,81 @@ export const INITIAL_STAFF: StaffMember[] = [
 ];
 
 export const INITIAL_LEAVE_REQUESTS: LeaveRequest[] = [
-  { id: 'lr1', staffId: 's2', staffName: 'Tom Designer', department: 'Creative', type: 'Annual', startDate: new Date(Date.now() + 86400000 * 5), endDate: new Date(Date.now() + 86400000 * 7), status: 'Pending', reason: 'Family trip', timestamp: new Date() },
-  { id: 'lr2', staffId: 's5', staffName: 'Account Exec Jane', department: 'Client Servicing', type: 'Sick', startDate: new Date(Date.now() - 86400000), endDate: new Date(), status: 'Approved', reason: 'Fever', timestamp: new Date(Date.now() - 172800000) },
-  { id: 'lr3', staffId: 's2', staffName: 'Tom Designer', department: 'Creative', type: 'Short', startDate: new Date(), endDate: new Date(), status: 'Pending', reason: 'Personal work', timestamp: new Date() }
+  { 
+    id: 'lr1', 
+    staffId: 's2', 
+    staffName: 'Tom Designer', 
+    department: 'Creative', 
+    type: 'Annual', 
+    startDate: new Date(Date.now() + 86400000 * 5), 
+    endDate: new Date(Date.now() + 86400000 * 7), 
+    status: 'Pending', 
+    reason: 'Family trip to Kandy', 
+    timestamp: new Date(Date.now() - 3600000 * 4),
+    assignedWorkloadToId: 's8',
+    assignedWorkloadToName: 'Maya Copywriter',
+    assignedWorkloadToRole: 'Copywriter',
+    managerApproval: {
+      approved: true,
+      approvedBy: 'Alex Creative Lead',
+      approvedById: 's7',
+      role: 'Management',
+      department: 'Creative',
+      timestamp: new Date(Date.now() - 3600000 * 2),
+      note: 'Creative assets covered by Maya. Division approved.'
+    }
+    // directorApproval is still pending -> 1 of 2 approvals completed!
+  },
+  { 
+    id: 'lr2', 
+    staffId: 's5', 
+    staffName: 'Account Exec Jane', 
+    department: 'Client Servicing', 
+    type: 'Sick', 
+    startDate: new Date(Date.now() - 86400000), 
+    endDate: new Date(), 
+    status: 'Approved', 
+    reason: 'Fever and medical rest', 
+    timestamp: new Date(Date.now() - 172800000),
+    assignedWorkloadToId: 's1',
+    assignedWorkloadToName: 'Sarah Admin',
+    assignedWorkloadToRole: 'Admin',
+    managerApproval: {
+      approved: true,
+      approvedBy: 'Sarah Admin',
+      approvedById: 's1',
+      role: 'Admin',
+      department: 'Management',
+      timestamp: new Date(Date.now() - 160000000),
+      note: 'Client communications redirected.'
+    },
+    directorApproval: {
+      approved: true,
+      approvedBy: 'Mr. Thilanka (GM)',
+      approvedById: 's4',
+      role: 'General Manager',
+      department: 'Directors',
+      timestamp: new Date(Date.now() - 150000000),
+      note: 'Director sign-off granted. Recover well.'
+    },
+    reviewedBy: 'Sarah Admin (Manager) & Mr. Thilanka (Director)'
+  },
+  { 
+    id: 'lr3', 
+    staffId: 's2', 
+    staffName: 'Tom Designer', 
+    department: 'Creative', 
+    type: 'Short', 
+    startDate: new Date(), 
+    endDate: new Date(), 
+    status: 'Pending', 
+    reason: 'Personal urgent appointment', 
+    timestamp: new Date(Date.now() - 3600000),
+    assignedWorkloadToId: 's7',
+    assignedWorkloadToName: 'Alex Creative Lead',
+    assignedWorkloadToRole: 'Management'
+    // 0 of 2 approvals
+  }
 ];
 
 export const INITIAL_PETTY_CASH: PettyCashTransaction[] = [

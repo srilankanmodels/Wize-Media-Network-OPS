@@ -187,37 +187,38 @@ const StaffManagement: React.FC<StaffManagementProps> = ({
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 animate-in fade-in duration-500">
-      {/* Header Banner matching Screenshot */}
-      <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-8 sm:p-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+      {/* Header Banner - Liquid Glass */}
+      <div className="liquid-glass-card hud-frame rounded-sm p-8 sm:p-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 shadow-[0_0_40px_-10px_rgba(var(--jarvis-primary-rgb),0.2)]">
         <div>
-          <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-[0.25em] mb-2">
-            PROPRIETARY ECOSYSTEM // PERSONNEL ROSTER
+          <div className="font-mono text-[10px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] mb-2 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
+            <span>PROPRIETARY ECOSYSTEM // PERSONNEL ROSTER // JARVIS MATRIX</span>
           </div>
           <h1 className="text-3xl sm:text-5xl font-black text-white uppercase tracking-tight font-heading leading-none">
-            TEAM <span className="text-neutral-500">DEPLOYMENT</span>
+            TEAM <span className="text-[var(--jarvis-primary)] hud-glow-text">DEPLOYMENT</span>
           </h1>
-          <p className="text-neutral-400 text-xs font-mono uppercase tracking-wider mt-3">
+          <p className="text-neutral-300 text-xs font-mono uppercase tracking-wider mt-3">
             Strategic Personnel Directory, Access Control & Deployment Logs
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          <div className="px-6 py-3 bg-[#12141a] border border-neutral-800 rounded-sm font-mono text-left">
-            <div className="text-[9px] text-neutral-400 uppercase tracking-widest">ACTIVE SPECIALISTS</div>
-            <div className="text-2xl font-black text-white leading-none mt-1">{staffList.length}</div>
+          <div className="px-6 py-3 bg-black/50 border border-[var(--jarvis-border)] rounded-sm font-mono text-left shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.15)]">
+            <div className="text-[9px] text-[var(--jarvis-primary)] uppercase tracking-widest font-bold">ACTIVE SPECIALISTS</div>
+            <div className="text-2xl font-black text-white leading-none mt-1 font-mono">{staffList.length}</div>
           </div>
           {canManage && (
             <div className="flex flex-wrap items-center gap-3">
               <button 
                 onClick={() => { setAgencyFormData(agencyProfile); setIsConfigOpen(true); }} 
-                className="bg-[#12141a] hover:bg-[#181a22] text-neutral-300 border border-neutral-800 px-4 py-3.5 font-mono text-xs uppercase tracking-wider rounded-sm transition-all flex items-center gap-2 cursor-pointer"
+                className="bg-black/40 hover:bg-black/60 text-neutral-300 border border-[var(--jarvis-border)] hover:border-[var(--jarvis-primary)] px-4 py-3.5 font-mono text-xs uppercase tracking-wider rounded-sm transition-all flex items-center gap-2 cursor-pointer"
               >
                 <Settings size={15} /> SETTINGS
               </button>
               {canManageAccess && (
                 <button 
                   onClick={() => setIsAccessModalOpen(true)} 
-                  className="bg-[#141624] hover:bg-[#1c1f33] text-indigo-300 border border-indigo-500/40 px-4 py-3.5 font-mono text-xs uppercase tracking-wider rounded-sm transition-all flex items-center gap-2 shadow-sm cursor-pointer"
+                  className="bg-black/40 hover:bg-black/60 text-indigo-300 border border-indigo-500/40 px-4 py-3.5 font-mono text-xs uppercase tracking-wider rounded-sm transition-all flex items-center gap-2 shadow-sm cursor-pointer"
                   title="Admin Access Management: Grant or recall permissions for any employee"
                 >
                   <ShieldCheck size={15} className="text-indigo-400" /> ACCESS MATRIX
@@ -226,7 +227,7 @@ const StaffManagement: React.FC<StaffManagementProps> = ({
               {canAddDeleteStaff && (
                 <button 
                   onClick={handleAddNew}
-                  className="bg-white text-black hover:bg-neutral-200 px-6 py-3.5 font-black text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer"
+                  className="jarvis-btn-primary px-6 py-3.5 font-black text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer"
                 >
                   <Plus size={16} strokeWidth={3} /> DEPLOY MEMBER
                 </button>
@@ -238,11 +239,11 @@ const StaffManagement: React.FC<StaffManagementProps> = ({
 
       {/* Search Input */}
       <div className="relative">
-        <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500" />
+        <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--jarvis-primary)] opacity-80" />
         <input 
           type="text" 
           placeholder="SEARCH SPECIALISTS BY NAME, STAFF ID, DIVISION OR ROLE..." 
-          className="w-full pl-12 pr-6 py-3.5 bg-[#0a0b0e] border border-neutral-800 focus:border-white font-mono text-xs uppercase tracking-wider text-white outline-none rounded-sm transition-colors placeholder:text-neutral-600"
+          className="w-full pl-12 pr-6 py-3.5 bg-black/40 border border-[var(--jarvis-border)] focus:border-[var(--jarvis-primary)] font-mono text-xs uppercase tracking-wider text-white outline-none rounded-sm transition-all placeholder:text-neutral-500 shadow-inner"
           value={searchTerm} 
           onChange={(e) => setSearchTerm(e.target.value)} 
         />
@@ -253,7 +254,7 @@ const StaffManagement: React.FC<StaffManagementProps> = ({
         {filteredStaff.map(staff => (
           <div 
             key={staff.id} 
-            className="bg-[#0a0b0e] border border-neutral-800 hover:border-neutral-700 rounded-sm p-6 flex flex-col justify-between transition-all group relative overflow-hidden"
+            className="liquid-glass-card border border-[var(--jarvis-border)] rounded-sm p-6 flex flex-col justify-between transition-all group relative overflow-hidden shadow-[0_0_20px_-5px_rgba(var(--jarvis-primary-rgb),0.12)]"
           >
             <div>
               <div className="flex items-start justify-between gap-4 mb-5">

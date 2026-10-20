@@ -119,13 +119,13 @@ const FinanceDashboard: React.FC<FinanceDashboardProps> = ({ projects, pettyCash
 
       {/* Tab Content 1: Payment Feed */}
       {activeTab === 'payment-feed' && (
-        <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm overflow-hidden">
-          <div className="p-6 bg-[#0e0f14] border-b border-neutral-800 flex justify-between items-center">
+        <div className="liquid-glass-card border border-[var(--jarvis-border)] rounded-sm overflow-hidden shadow-[0_0_20px_-5px_rgba(var(--jarvis-primary-rgb),0.12)]">
+          <div className="p-6 bg-black/40 border-b border-[var(--jarvis-border)] flex justify-between items-center">
             <div className="flex items-center gap-3">
-              <History size={18} className="text-neutral-400" />
+              <History size={18} className="text-[var(--jarvis-primary)]" />
               <h2 className="font-heading font-black text-sm uppercase tracking-wider text-white">Incoming Client Remittances</h2>
             </div>
-            <span className="font-mono text-[10px] text-neutral-400 uppercase tracking-widest">
+            <span className="font-mono text-[10px] text-[var(--jarvis-primary)] uppercase tracking-widest font-bold">
               Pending: LKR {pendingVerificationAmount.toLocaleString()}
             </span>
           </div>
@@ -192,10 +192,10 @@ const FinanceDashboard: React.FC<FinanceDashboardProps> = ({ projects, pettyCash
 
       {/* Tab Content 2: Project Ledger */}
       {activeTab === 'advances' && (
-        <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm overflow-hidden">
+        <div className="liquid-glass-card border border-[var(--jarvis-border)] rounded-sm overflow-hidden shadow-[0_0_20px_-5px_rgba(var(--jarvis-primary-rgb),0.12)]">
           <div className="overflow-x-auto">
             <table className="w-full text-left font-mono text-xs">
-              <thead className="bg-[#0e0f14] border-b border-neutral-800 text-[10px] font-mono uppercase text-neutral-400 tracking-wider">
+              <thead className="bg-black/40 border-b border-[var(--jarvis-border)] text-[10px] font-mono uppercase text-neutral-300 tracking-wider">
                 <tr>
                   <th className="px-6 py-4">Campaign / Client</th>
                   <th className="px-6 py-4">Job Code</th>
@@ -242,7 +242,7 @@ const FinanceDashboard: React.FC<FinanceDashboardProps> = ({ projects, pettyCash
                         className={`px-3 py-1.5 rounded-sm font-mono text-[10px] uppercase tracking-wider transition-all border ${
                           p.advanceReceived 
                             ? 'bg-[#12141a] border-neutral-800 text-neutral-400 hover:text-white' 
-                            : 'bg-white text-black font-black border-white hover:bg-neutral-200'
+                            : 'jarvis-btn-primary text-black font-black border-transparent'
                         }`}
                       >
                         {p.advanceReceived ? 'Revert Flag' : 'Mark Received'}
@@ -261,12 +261,12 @@ const FinanceDashboard: React.FC<FinanceDashboardProps> = ({ projects, pettyCash
         <div className="space-y-6">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
-              <Wallet size={18} className="text-neutral-400" />
+              <Wallet size={18} className="text-[var(--jarvis-primary)]" />
               <h3 className="font-heading font-black text-sm uppercase tracking-wider text-white">Daily Operational Cash Ledger</h3>
             </div>
             <button 
               onClick={() => setIsAddingCash(true)} 
-              className="bg-white text-black hover:bg-neutral-200 px-5 py-2.5 font-black font-mono text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-2"
+              className="jarvis-btn-primary px-5 py-2.5 font-black font-mono text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer"
             >
               <Plus size={15} strokeWidth={3} /> LOG CASH TRANSACTION
             </button>
@@ -329,7 +329,7 @@ const FinanceDashboard: React.FC<FinanceDashboardProps> = ({ projects, pettyCash
             </form>
           )}
 
-          <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm overflow-hidden">
+          <div className="liquid-glass-card border border-[var(--jarvis-border)] rounded-sm overflow-hidden shadow-[0_0_20px_-5px_rgba(var(--jarvis-primary-rgb),0.12)]">
             <div className="divide-y divide-neutral-800/80">
               {pettyCash.slice().sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(tx => (
                 <div key={tx.id} className="p-6 flex items-center justify-between hover:bg-[#12141a]/60 transition-colors">

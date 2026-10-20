@@ -337,17 +337,17 @@ const MeetingNotes: React.FC<MeetingNotesProps> = ({
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 animate-in fade-in duration-300">
-      {/* Precision Header Banner */}
-      <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-6 sm:p-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+      {/* Precision Header Banner - Liquid Glass */}
+      <div className="liquid-glass-card hud-frame rounded-sm p-6 sm:p-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 shadow-[0_0_40px_-10px_rgba(var(--jarvis-primary-rgb),0.2)]">
         <div>
-          <div className="font-mono text-[9px] text-neutral-400 uppercase tracking-[0.25em] mb-2 flex items-center gap-2">
-            <span>PROPRIETARY ECOSYSTEM // DECISION ARCHIVES</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="font-mono text-[9px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] mb-2 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
+            <span>PROPRIETARY ECOSYSTEM // DECISION ARCHIVES // JARVIS MATRIX</span>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-black text-white uppercase tracking-tight font-heading leading-none">
-            MEETING <span className="text-neutral-500">INTELLIGENCE</span>
+          <h1 className="text-3xl sm:text-5xl font-black text-white uppercase tracking-tight font-heading leading-none">
+            MEETING <span className="text-[var(--jarvis-primary)] hud-glow-text">INTELLIGENCE</span>
           </h1>
-          <p className="text-neutral-400 text-xs font-mono uppercase tracking-wider mt-2.5">
+          <p className="text-neutral-300 text-xs font-mono uppercase tracking-wider mt-2.5">
             Synchronized Strategic Protocols, Team Tagging, Real-Time Minutes & Action Dispatches
           </p>
         </div>
@@ -356,14 +356,14 @@ const MeetingNotes: React.FC<MeetingNotesProps> = ({
           <button 
             type="button"
             onClick={() => handleOpenCreate('standard')} 
-            className="bg-[#12141a] hover:bg-[#181a24] text-neutral-300 hover:text-white border border-neutral-800 px-5 py-3 font-mono text-xs uppercase tracking-wider rounded-sm transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+            className="jarvis-btn-secondary px-5 py-3 font-mono text-xs uppercase tracking-wider rounded-sm transition-all flex items-center gap-2 cursor-pointer shadow-sm"
           >
             <StickyNote size={15} /> QUICK NOTE
           </button>
           <button 
             type="button"
             onClick={() => handleOpenCreate('live')} 
-            className="bg-white text-black hover:bg-neutral-200 px-6 py-3 font-black text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer"
+            className="jarvis-btn-primary px-6 py-3 font-black text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer"
           >
             <Users size={16} strokeWidth={3} /> INITIALIZE MEETING PROTOCOL
           </button>

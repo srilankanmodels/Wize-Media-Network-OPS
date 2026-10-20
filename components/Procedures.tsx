@@ -274,20 +274,21 @@ const Procedures: React.FC<ProceduresProps> = ({
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 animate-in fade-in duration-500">
-      {/* Hero Banner matching screenshot */}
-      <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-8 sm:p-12 relative overflow-hidden">
+      {/* Hero Banner - Liquid Glass */}
+      <div className="liquid-glass-card hud-frame border border-[var(--jarvis-border)] rounded-sm p-8 sm:p-12 relative overflow-hidden shadow-[0_0_40px_-10px_rgba(var(--jarvis-primary-rgb),0.2)]">
         <div className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-[100px] sm:text-[180px] lg:text-[240px] text-white/[0.03] select-none uppercase tracking-tighter pointer-events-none font-heading leading-none">
           PROTOCOLS
         </div>
 
         <div className="relative z-10 max-w-3xl">
-          <div className="font-mono text-xs uppercase tracking-[0.25em] text-neutral-400 mb-4">
-            PROPRIETARY ECOSYSTEM // STANDARD OPERATING PROCEDURES
+          <div className="font-mono text-xs uppercase tracking-[0.25em] text-[var(--jarvis-primary)] mb-4 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
+            <span>PROPRIETARY ECOSYSTEM // STANDARD OPERATING PROCEDURES // JARVIS MATRIX</span>
           </div>
 
           <h1 className="text-4xl sm:text-6xl font-black text-white tracking-tight uppercase leading-none font-heading">
             PROCEDURES
-            <span className="block text-[#52525b] font-bold mt-2">OPERATIONAL MATRIX</span>
+            <span className="block text-[var(--jarvis-primary)] hud-glow-text font-bold mt-2">OPERATIONAL MATRIX</span>
           </h1>
 
           <p className="text-xs sm:text-sm text-neutral-300 font-medium uppercase tracking-wider max-w-2xl mt-6 leading-relaxed">
@@ -297,14 +298,14 @@ const Procedures: React.FC<ProceduresProps> = ({
           <div className="flex flex-wrap items-center gap-4 mt-8">
             <button
               onClick={() => handleOpenAddModal()}
-              className="bg-white text-black hover:bg-neutral-200 px-6 py-3 font-black text-xs uppercase tracking-wider flex items-center gap-2 rounded-sm shadow-xl active:scale-95 transition-all"
+              className="jarvis-btn-primary px-6 py-3 font-black text-xs uppercase tracking-wider flex items-center gap-2 rounded-sm shadow-xl active:scale-95 transition-all cursor-pointer"
             >
               <Plus size={16} strokeWidth={3} /> NEW PROTOCOL
             </button>
 
             <button
               onClick={() => window.print()}
-              className="bg-[#12141a] border border-neutral-700 text-white hover:bg-neutral-800 px-6 py-3 font-black text-xs uppercase tracking-wider flex items-center gap-2 rounded-sm active:scale-95 transition-all"
+              className="jarvis-btn-secondary px-6 py-3 font-black text-xs uppercase tracking-wider flex items-center gap-2 rounded-sm active:scale-95 transition-all cursor-pointer"
             >
               <Printer size={16} /> PRINT DIRECTIVES
             </button>

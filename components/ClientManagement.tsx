@@ -110,29 +110,30 @@ const ClientManagement: React.FC<ClientManagementProps> = ({ clientList, onAddCl
 
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 animate-in fade-in duration-500">
-      {/* Header Banner matching Screenshot Theme */}
-      <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-8 sm:p-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+      {/* Header Banner - Liquid Glass */}
+      <div className="liquid-glass-card hud-frame rounded-sm p-8 sm:p-10 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 shadow-[0_0_40px_-10px_rgba(var(--jarvis-primary-rgb),0.2)]">
         <div>
-          <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-[0.25em] mb-2">
-            PROPRIETARY ECOSYSTEM // CLIENT DIRECTORY
+          <div className="font-mono text-[10px] text-[var(--jarvis-primary)] uppercase tracking-[0.25em] mb-2 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-ping" />
+            <span>PROPRIETARY ECOSYSTEM // CLIENT DIRECTORY // JARVIS MATRIX</span>
           </div>
           <h1 className="text-3xl sm:text-5xl font-black text-white uppercase tracking-tight font-heading leading-none">
-            CLIENT <span className="text-neutral-500">REGISTRY</span>
+            CLIENT <span className="text-[var(--jarvis-primary)] hud-glow-text">REGISTRY</span>
           </h1>
-          <p className="text-neutral-400 text-xs font-mono uppercase tracking-wider mt-3">
+          <p className="text-neutral-300 text-xs font-mono uppercase tracking-wider mt-3">
             Corporate Partner Profiles, Key Stakeholders & Contact Directives
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          <div className="px-6 py-3 bg-[#12141a] border border-neutral-800 rounded-sm font-mono text-left">
-            <div className="text-[9px] text-neutral-400 uppercase tracking-widest">REGISTERED CLIENTS</div>
-            <div className="text-2xl font-black text-white leading-none mt-1">{clientList.length}</div>
+          <div className="px-6 py-3 bg-black/50 border border-[var(--jarvis-border)] rounded-sm font-mono text-left shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.15)]">
+            <div className="text-[9px] text-[var(--jarvis-primary)] uppercase tracking-widest font-bold">REGISTERED CLIENTS</div>
+            <div className="text-2xl font-black text-white leading-none mt-1 font-mono">{clientList.length}</div>
           </div>
           {canAdd && (
             <button 
               onClick={handleAddNew}
-              className="bg-white text-black hover:bg-neutral-200 px-6 py-3.5 font-black text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-2"
+              className="jarvis-btn-primary px-6 py-3.5 font-black text-xs uppercase tracking-wider rounded-sm transition-all shadow-md active:scale-95 flex items-center gap-2 cursor-pointer"
             >
               <Plus size={16} strokeWidth={3} /> NEW CLIENT ACCOUNT
             </button>
@@ -142,11 +143,11 @@ const ClientManagement: React.FC<ClientManagementProps> = ({ clientList, onAddCl
 
       {/* Search Input */}
       <div className="relative">
-        <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500" />
+        <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--jarvis-primary)] opacity-80" />
         <input 
           type="text" 
           placeholder="SEARCH CLIENTS BY COMPANY NAME, CONTACT PERSON, OR INDUSTRY..." 
-          className="w-full pl-12 pr-6 py-3.5 bg-[#0a0b0e] border border-neutral-800 focus:border-white font-mono text-xs uppercase tracking-wider text-white outline-none rounded-sm transition-colors placeholder:text-neutral-600"
+          className="w-full pl-12 pr-6 py-3.5 bg-black/40 border border-[var(--jarvis-border)] focus:border-[var(--jarvis-primary)] font-mono text-xs uppercase tracking-wider text-white outline-none rounded-sm transition-all placeholder:text-neutral-500 shadow-inner"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
@@ -157,7 +158,7 @@ const ClientManagement: React.FC<ClientManagementProps> = ({ clientList, onAddCl
         {filteredClients.map(client => (
           <div 
             key={client.id} 
-            className="bg-[#0a0b0e] border border-neutral-800 hover:border-neutral-700 rounded-sm p-6 flex flex-col justify-between transition-all group relative overflow-hidden"
+            className="liquid-glass-card border border-[var(--jarvis-border)] rounded-sm p-6 flex flex-col justify-between transition-all group relative overflow-hidden shadow-[0_0_20px_-5px_rgba(var(--jarvis-primary-rgb),0.12)]"
           >
             {/* Top Bar inside Card */}
             <div>

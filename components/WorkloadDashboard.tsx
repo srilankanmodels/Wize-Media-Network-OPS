@@ -307,8 +307,8 @@ const WorkloadDashboard: React.FC<WorkloadDashboardProps> = ({
       </div>
 
       {/* SPECIAL BALANCING RADAR: Copywriters vs Designers */}
-      <div className="bg-[#0b0c10] border border-neutral-800 rounded-sm p-6 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-neutral-800/80 pb-3">
+      <div className="liquid-glass-card border border-[var(--jarvis-border)] rounded-sm p-6 space-y-4 shadow-[0_0_20px_-5px_rgba(var(--jarvis-primary-rgb),0.12)]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--jarvis-border)] pb-3">
           <div className="flex items-center gap-2.5">
             <Sparkles size={16} className="text-emerald-400" />
             <h3 className="font-mono text-xs uppercase tracking-[0.25em] text-white font-bold">
