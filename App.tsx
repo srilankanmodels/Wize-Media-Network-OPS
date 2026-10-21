@@ -1170,6 +1170,7 @@ const App: React.FC = () => {
               onSendMessage={handleSendMessage} 
               leaveRequests={leaveRequests}
               onUpdateLeave={handleUpdateLeave}
+              onUpdateProject={handleUpdateProject}
               onNavigateToHR={() => handleNav('hr')}
               onNavigateToWorkload={() => handleNav('workload')}
             />

@@ -54,7 +54,13 @@ export interface Task {
   timeSpent?: number; 
   timerStart?: number; 
   notes?: string; 
-  deadline?: Date; 
+  deadline?: Date | string; 
+  priority?: 'Critical' | 'High' | 'Medium' | 'Low';
+  originalDeadline?: Date | string;
+  postponedReason?: string;
+  isTracking?: boolean;
+  trackingStartedAt?: number;
+  completedAt?: Date | string;
 }
 
 export interface Step {

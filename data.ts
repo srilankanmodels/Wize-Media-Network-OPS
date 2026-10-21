@@ -260,65 +260,124 @@ export const INITIAL_MEETING_NOTES: MeetingNote[] = [
   }
 ];
 
-export const INITIAL_PROJECTS: Project[] = [
-  {
-    id: 'p1',
-    jobNumber: 'MW-J-2024-0001',
-    clientName: "Alpha Corp",
-    projectName: "Annual Report 2023/24",
-    type: 'Annual Reports',
-    dueDate: new Date('2024-05-30'),
-    year: "2023-2024",
-    status: 'In Progress',
-    currentStep: 2,
-    progress: 45,
-    tasksCompleted: { '1-1': true },
-    comments: { 1: [] },
-    memos: [],
-    lastUpdated: new Date(),
-    steps: getTemplateSteps('Annual Reports'),
-    quotations: [],
-    documents: [],
-    channelId: 'ch-p1',
-    advanceReceived: true,
-    advanceAmount: 150000,
-    createdBy: 's1',
-    createdByName: 'Sarah Admin',
-    createdByRole: 'Admin',
-    createdByStaffId: 'MW-001',
-    createdByDepartment: 'Management',
-    createdByAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
-    createdAt: new Date('2024-01-15')
-  },
-  {
-    id: 'p2',
-    jobNumber: 'MW-J-2024-0002',
-    clientName: "Gamma Global",
-    projectName: "Q2 Digital Push",
-    type: 'Digital & Media Strategy',
-    dueDate: new Date('2024-04-01'),
-    year: "2024",
-    status: 'In Progress',
-    currentStep: 1,
-    progress: 10,
-    tasksCompleted: {},
-    comments: {},
-    memos: [],
-    lastUpdated: new Date('2024-03-20'),
-    steps: getTemplateSteps('Digital & Media Strategy'),
-    quotations: [],
-    documents: [],
-    channelId: 'ch-p2',
-    advanceReceived: false,
-    createdBy: 's5',
-    createdByName: 'Account Exec Jane',
-    createdByRole: 'Account Executive',
-    createdByStaffId: 'MW-005',
-    createdByDepartment: 'Client Servicing',
-    createdByAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
-    createdAt: new Date('2024-02-10')
-  },
-];
+export const INITIAL_PROJECTS: Project[] = (() => {
+  const now = Date.now();
+  const list: Project[] = [
+    {
+      id: 'p1',
+      jobNumber: 'MW-J-2024-0001',
+      clientName: "Alpha Corp",
+      projectName: "Annual Report 2023/24",
+      type: 'Annual Reports',
+      dueDate: new Date(now + 86400000 * 20),
+      year: "2023-2024",
+      status: 'In Progress',
+      currentStep: 2,
+      progress: 35,
+      tasksCompleted: { '1-1': true },
+      comments: { 1: [] },
+      memos: [],
+      lastUpdated: new Date(),
+      steps: [
+        {
+          id: 1,
+          title: "Discovery & Planning",
+          description: "Research & scope authorization",
+          durationWeeks: 1,
+          tasks: [
+            { id: '1-1', text: "Client Brief & Scope Authorization", completed: true, role: Role.AE, assignedTo: 's5', timeAllocated: 60, timeSpent: 60 },
+            { id: '1-2', text: "Budget & Milestone Sign-off", completed: false, role: Role.MANAGEMENT, assignedTo: 's1', priority: 'Critical', deadline: new Date(now + 86400000 * 2).toISOString(), timeAllocated: 60, timeSpent: 20 }
+          ]
+        },
+        {
+          id: 2,
+          title: "Concept & Art Direction",
+          description: "Creative direction and layout exploration",
+          durationWeeks: 2,
+          tasks: [
+            { id: '2-1', text: "Visual Identity & Annual Report Grid Concepts", completed: false, role: Role.DESIGNER, assignedTo: 's2', priority: 'Critical', deadline: new Date(now - 86400000 * 2).toISOString(), timeAllocated: 120, timeSpent: 40 },
+            { id: '2-2', text: "Strategic Copywriting & Executive Highlights", completed: false, role: Role.ADMIN, assignedTo: 's1', priority: 'High', deadline: new Date(now - 86400000 * 1).toISOString(), timeAllocated: 90, timeSpent: 25 },
+            { id: '2-3', text: "Governance Audit & Board Photo Schedule", completed: false, role: Role.ADMIN, assignedTo: 's1', priority: 'Medium', deadline: new Date(now + 86400000 * 4).toISOString(), originalDeadline: new Date(now - 86400000 * 2).toISOString(), postponedReason: 'Alpha Corp requested rescheduled photography window due to board meeting delay', timeAllocated: 60, timeSpent: 10 },
+            { id: '2-4', text: "Client Review Deck & Presentation", completed: false, role: Role.AE, assignedTo: 's5', priority: 'High', deadline: new Date(now + 86400000 * 3).toISOString(), timeAllocated: 90, timeSpent: 0 }
+          ]
+        },
+        {
+          id: 3,
+          title: "Production & Typesetting",
+          description: "Execution of 120-page financial report",
+          durationWeeks: 3,
+          tasks: [
+            { id: '3-1', text: "Typesetting & High-Resolution Print Master", completed: false, role: Role.DESIGNER, assignedTo: 's2', priority: 'Medium', deadline: new Date(now + 86400000 * 7).toISOString(), timeAllocated: 240, timeSpent: 0 },
+            { id: '3-2', text: "Financial Tables QA & Compliance Proofreading", completed: false, role: Role.PROOFREADER, assignedTo: 's1', priority: 'Low', deadline: new Date(now + 86400000 * 8).toISOString(), timeAllocated: 60, timeSpent: 0 }
+          ]
+        },
+        {
+          id: 4,
+          title: "Delivery & Archival",
+          description: "Final print verification and invoicing",
+          durationWeeks: 1,
+          tasks: [
+            { id: '4-1', text: "Final Client Sign-off & Delivery Note", completed: false, role: Role.AE, assignedTo: 's5', priority: 'Medium', deadline: new Date(now + 86400000 * 12).toISOString(), timeAllocated: 30, timeSpent: 0 },
+            { id: '4-2', text: "Final Invoicing & Account Reconciliation", completed: false, role: Role.ACCOUNTS, assignedTo: 's1', priority: 'Medium', deadline: new Date(now + 86400000 * 14).toISOString(), timeAllocated: 20, timeSpent: 0 }
+          ]
+        }
+      ],
+      quotations: [],
+      documents: [],
+      channelId: 'ch-p1',
+      advanceReceived: true,
+      advanceAmount: 150000,
+      createdBy: 's1',
+      createdByName: 'Sarah Admin',
+      createdByRole: 'Admin',
+      createdByStaffId: 'MW-001',
+      createdByDepartment: 'Management',
+      createdByAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
+      createdAt: new Date('2024-01-15')
+    },
+    {
+      id: 'p2',
+      jobNumber: 'MW-J-2024-0002',
+      clientName: "Gamma Global",
+      projectName: "Q2 Digital Push",
+      type: 'Digital & Media Strategy',
+      dueDate: new Date(now + 86400000 * 15),
+      year: "2024",
+      status: 'In Progress',
+      currentStep: 1,
+      progress: 10,
+      tasksCompleted: {},
+      comments: {},
+      memos: [],
+      lastUpdated: new Date(),
+      steps: [
+        {
+          id: 1,
+          title: "Strategic Discovery",
+          description: "Audience insights and channel mapping",
+          durationWeeks: 1,
+          tasks: [
+            { id: '2p-1', text: "Target Audience Matrix & Ad Placement Specs", completed: false, role: Role.ADMIN, assignedTo: 's1', priority: 'Critical', deadline: new Date(now + 86400000 * 1).toISOString(), timeAllocated: 75, timeSpent: 0 },
+            { id: '2p-2', text: "Creative Motion Graphics Storyboard", completed: false, role: Role.DESIGNER, assignedTo: 's2', priority: 'High', deadline: new Date(now - 86400000 * 3).toISOString(), timeAllocated: 120, timeSpent: 20 },
+            { id: '2p-3', text: "Digital Media Budget Allocation & Channel Mix", completed: false, role: Role.AE, assignedTo: 's5', priority: 'Medium', deadline: new Date(now + 86400000 * 5).toISOString(), originalDeadline: new Date(now - 86400000 * 1).toISOString(), postponedReason: 'Awaiting revised marketing spend cap from Gamma Global CFO', timeAllocated: 45, timeSpent: 10 }
+          ]
+        }
+      ],
+      quotations: [],
+      documents: [],
+      channelId: 'ch-p2',
+      advanceReceived: false,
+      createdBy: 's5',
+      createdByName: 'Account Exec Jane',
+      createdByRole: 'Account Executive',
+      createdByStaffId: 'MW-005',
+      createdByDepartment: 'Client Servicing',
+      createdByAvatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80',
+      createdAt: new Date('2024-02-10')
+    }
+  ];
+  return list;
+})();
 
 // Added AGENCY_PROCEDURES to fix the import error in components/Procedures.tsx
 export const AGENCY_PROCEDURES: Procedure[] = [
