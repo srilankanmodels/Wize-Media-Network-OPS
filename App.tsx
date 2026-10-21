@@ -29,6 +29,13 @@ import { JarvisThemeConfig } from './types';
 import { loadSavedJarvisTheme, saveJarvisTheme, applyJarvisThemeToDOM } from './utils/jarvisTheme';
 import { playJarvisSound } from './utils/jarvisAudio';
 import JARVISSettingsModal from './components/JARVISSettingsModal';
+import DailyReportSettingsModal from './components/DailyReportSettingsModal';
+import { 
+  sendTaskMentionEmail, 
+  sendTaskAssignmentEmail, 
+  getStoredDailyReportConfig, 
+  dispatchDailyReport 
+} from './utils/emailDispatcher';
 
 type ViewState = 'dashboard' | 'detail' | 'staff' | 'clients' | 'finance' | 'hr' | 'registry' | 'notes' | 'procedures' | 'calendar' | 'access' | 'workload';
 type StorageMode = 'cloud' | 'local';
@@ -93,6 +100,7 @@ const App: React.FC = () => {
   const [briefSearchQuery, setBriefSearchQuery] = useState('');
   const [jarvisTheme, setJarvisTheme] = useState<JarvisThemeConfig>(loadSavedJarvisTheme);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isDailyReportSettingsOpen, setIsDailyReportSettingsOpen] = useState(false);
 
   useEffect(() => {
     applyJarvisThemeToDOM(jarvisTheme);
@@ -355,7 +363,7 @@ const App: React.FC = () => {
     };
     await writeData('todos', newTodo.id, newTodo, setTodos, todos);
 
-    // If people are tagged, dispatch notifications
+    // If people are tagged, dispatch notifications & email notifications
     if (taggedStaffIds && taggedStaffIds.length > 0) {
       taggedStaffIds.forEach(staffId => {
         if (staffId !== currentUser.id) {
@@ -369,8 +377,33 @@ const App: React.FC = () => {
             link: 'dashboard'
           };
           writeData('notifications', notif.id, notif, setNotifications, notifications);
+
+          // Automated email notification to tagged individual
+          const taggedMember = (staffList || []).find(s => s.id === staffId);
+          if (taggedMember) {
+            sendTaskMentionEmail({
+              taskText: text.trim(),
+              taggedStaff: taggedMember,
+              authorName: currentUser.name,
+              isDaily,
+              deadline: due
+            }).catch(e => console.debug('Task mention email dispatch notice:', e));
+          }
         }
       });
+    }
+
+    // If assigned to a staff member who wasn't tagged, send assignment email
+    if (newTodo.assignedTo && newTodo.assignedTo !== currentUser.id && (!taggedStaffIds || !taggedStaffIds.includes(newTodo.assignedTo))) {
+      const assignedMember = (staffList || []).find(s => s.id === newTodo.assignedTo);
+      if (assignedMember) {
+        sendTaskAssignmentEmail({
+          taskText: text.trim(),
+          deadline: due,
+          assignee: assignedMember,
+          assignerName: currentUser.name
+        }).catch(e => console.debug('Task assignment email dispatch notice:', e));
+      }
     }
   };
 
@@ -680,6 +713,55 @@ const App: React.FC = () => {
 
   // Rule: Theme settings & color customizer should be accessed ONLY by Super Admin and Admin
   const canAccessSettings = isSuperAdmin || isAdmin;
+  const canAccessDailyReportSettings = isSuperAdmin || isAdmin || isGM || isDirector || isManager;
+
+  // Automated 7:00 PM EOD Daily Reporting Scheduler
+  useEffect(() => {
+    const checkDailyReportSchedule = async () => {
+      if (!currentUser) return;
+      const config = getStoredDailyReportConfig();
+      if (!config.enabled) return;
+
+      const now = new Date();
+      const currentHours = now.getHours().toString().padStart(2, '0');
+      const currentMinutes = now.getMinutes().toString().padStart(2, '0');
+      const currentTimeStr = `${currentHours}:${currentMinutes}`;
+      const todayDateStr = now.toISOString().split('T')[0];
+
+      const targetTime = config.scheduleTime || '19:00';
+
+      if (currentTimeStr >= targetTime && config.lastCompiledDate !== todayDateStr) {
+        try {
+          const result = await dispatchDailyReport({
+            config,
+            projects,
+            todos,
+            staffList,
+            triggeredBy: 'SYSTEM_DAEMON_7PM'
+          });
+
+          if (isSuperAdmin || isAdmin || isGM || isDirector || isManager) {
+            const adminNotif: Notification = {
+              id: `daily-report-alert-${Date.now()}`,
+              userId: currentUser.id,
+              text: `[AUTOMATED EOD REPORT] Daily report compiled and emailed to leadership (${result.recipientsCount} recipients).`,
+              type: 'system',
+              read: false,
+              timestamp: new Date(),
+              link: 'dashboard'
+            };
+            writeData('notifications', adminNotif.id, adminNotif, setNotifications, notifications);
+          }
+        } catch (err) {
+          console.error('Automated 7:00 PM daily report compilation error:', err);
+        }
+      }
+    };
+
+    checkDailyReportSchedule();
+    const interval = setInterval(checkDailyReportSchedule, 30000);
+    return () => clearInterval(interval);
+  }, [currentUser, projects, todos, staffList]);
 
   // Rule: Management buttons (Directives Simulator) displayed ONLY for Managers / GM / Directors / Admins / Super Admins
   const canViewManagerButtons = isSuperAdmin || isAdmin || isGM || isDirector || isManager;
@@ -1183,6 +1265,7 @@ const App: React.FC = () => {
               onUpdateProject={handleUpdateProject}
               onNavigateToHR={() => handleNav('hr')}
               onNavigateToWorkload={() => handleNav('workload')}
+              onOpenDailyReportSettings={() => setIsDailyReportSettingsOpen(true)}
             />
           )}
 
@@ -1429,6 +1512,34 @@ const App: React.FC = () => {
                               </div>
                             </div>
                             <Sparkles size={16} className="text-[var(--jarvis-primary)] animate-pulse shrink-0" />
+                          </button>
+                        )}
+
+                        {/* Daily Report Settings Action in Menu - Accessible to Super Admin, Admin, GM, Directors & Managers */}
+                        {canAccessDailyReportSettings && (
+                          <button 
+                            onClick={() => {
+                              setIsDailyReportSettingsOpen(true);
+                              setIsSidebarOpen(false);
+                              playJarvisSound('sonar', !jarvisTheme.audioFeedback);
+                            }}
+                            className="w-full flex items-center justify-between p-4 rounded-sm border border-amber-500/60 bg-amber-950/20 text-white shadow-[0_0_20px_-3px_rgba(245,158,11,0.25)] hover:border-amber-400 transition-all text-left cursor-pointer group"
+                          >
+                            <div className="flex items-center gap-3.5 min-w-0">
+                              <div className="w-8 h-8 rounded-sm bg-black/60 border border-amber-500/60 flex items-center justify-center text-amber-400 group-hover:rotate-45 transition-transform shadow-[0_0_10px_rgba(245,158,11,0.4)]">
+                                <Clock size={16} />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-black text-xs uppercase tracking-wider text-amber-400 font-heading flex items-center gap-2">
+                                  <span>DAILY REPORT SETTINGS</span>
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                                </div>
+                                <div className="text-[10px] text-neutral-300 truncate font-mono">
+                                  7:00 PM Schedule & Executive Recipients
+                                </div>
+                              </div>
+                            </div>
+                            <Send size={15} className="text-amber-400 shrink-0" />
                           </button>
                         )}
 
@@ -1766,6 +1877,18 @@ const App: React.FC = () => {
         currentTheme={jarvisTheme}
         onSaveTheme={handleSaveTheme}
       />
+
+      {/* Daily Report Settings & 7:00 PM Scheduler Modal */}
+      {currentUser && (
+        <DailyReportSettingsModal
+          isOpen={isDailyReportSettingsOpen && canAccessDailyReportSettings}
+          onClose={() => setIsDailyReportSettingsOpen(false)}
+          staffList={staffList}
+          projects={projects}
+          todos={todos}
+          currentUser={currentUser}
+        />
+      )}
     </div>
   );
 };

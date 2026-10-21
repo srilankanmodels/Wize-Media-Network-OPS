@@ -4,6 +4,7 @@ import StepCard from './StepCard';
 import QuotationBuilder from './QuotationBuilder';
 import CommunicationHub from './CommunicationHub';
 import { generateQuotationPDF, generateVaultDocumentPDF } from '../utils/pdfGenerator';
+import { sendTaskAssignmentEmail } from '../utils/emailDispatcher';
 import { ArrowLeft, Calendar, Briefcase, FileText, Folder, UploadCloud, Download, Clock, BarChart3, ChevronRight, X, MessageSquare, ShieldCheck, DollarSign, Send, CreditCard, FileCheck, Plus, Zap, ExternalLink, Eye, Hash, Activity, Check, Pencil, ArrowUpRight, PauseCircle, XCircle, PlayCircle, AlertTriangle, ShieldAlert, CheckCircle2, Edit2 } from 'lucide-react';
 
 interface ProjectDetailProps {
@@ -341,6 +342,19 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
             type: 'assignment',
             link: project.id 
         });
+
+        // Automated Email Notification to relevant assignee
+        const assignedStaff = staffList.find(s => s.id === sid);
+        if (assignedStaff) {
+          sendTaskAssignmentEmail({
+            taskText,
+            projectName: project.projectName,
+            clientName: project.clientName,
+            jobNumber: project.jobNumber,
+            assignee: assignedStaff,
+            assignerName: currentUser.name
+          }).catch(err => console.debug('Email notification dispatch notice:', err));
+        }
     }
   };
 

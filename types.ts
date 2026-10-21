@@ -554,3 +554,82 @@ export interface JarvisThemeConfig {
   scanlineEffect: boolean;
   hudBorders: boolean;
 }
+
+export interface DailyReportConfig {
+  enabled: boolean;
+  scheduleTime: string; // '19:00' (24-hour format HH:mm)
+  recipientRoles: string[]; // ['General Manager', 'Management', 'Admin', 'Super Admin', 'Director', 'Directors']
+  specificStaffIds: string[];
+  customEmails: string[];
+  includeCompletedTasks: boolean;
+  includeActiveDirectives: boolean;
+  includeTimeLogged: boolean;
+  includeStaffEfficiency: boolean;
+  lastCompiledDate?: string; // 'YYYY-MM-DD'
+  lastDispatchedAt?: string; // ISO string
+}
+
+export interface StaffDailyAccomplishment {
+  staffId: string;
+  name: string;
+  role: string;
+  department: string;
+  avatarUrl?: string;
+  email: string;
+  completedTasks: {
+    id: string;
+    text: string;
+    projectName?: string;
+    jobNumber?: string;
+    completedAt?: string;
+    timeSpentMinutes?: number;
+  }[];
+  activeTasks: {
+    id: string;
+    text: string;
+    projectName?: string;
+    priority?: string;
+    deadline?: string;
+  }[];
+  dailyTodosCompleted: {
+    id: string;
+    text: string;
+  }[];
+  dailyTodosPending: {
+    id: string;
+    text: string;
+  }[];
+  totalMinutesLogged: number;
+  efficiencyScore: number;
+}
+
+export interface DailyCompiledReport {
+  id: string;
+  reportDate: string; // 'YYYY-MM-DD'
+  reportTitle: string;
+  compiledAt: string; // ISO string
+  totalStaffActive: number;
+  totalCompletedToday: number;
+  totalActiveDirectives: number;
+  totalHoursLogged: number;
+  averageEfficiency: number;
+  staffAccomplishments: StaffDailyAccomplishment[];
+  dispatchedTo: string[];
+  dispatchedRoles: string[];
+  dispatchStatus: 'DELIVERED' | 'RECORDED_IN_QUEUE' | 'FAILED';
+  summaryMemo: string;
+}
+
+export interface EmailDispatchRecord {
+  id: string;
+  to: string;
+  toName?: string;
+  subject: string;
+  snippet: string;
+  type: 'task_assignment' | 'task_mention' | 'daily_report' | 'system_alert';
+  status: 'DELIVERED' | 'RECORDED' | 'FAILED';
+  deliveryChannel: 'GMAIL_API' | 'INTERNAL_NOTIFICATION';
+  timestamp: string; // ISO string
+  error?: string;
+}
+

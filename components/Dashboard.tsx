@@ -13,6 +13,14 @@ import GameHub from './GameHub';
 import GmailWidget from './GmailWidget';
 import MonthlyCalendar from './MonthlyCalendar';
 import GoogleDriveWidget from './GoogleDriveWidget';
+import { DailyReportWidget } from './DailyReportWidget';
+import { 
+  getLatestDailyReport, 
+  getStoredDailyReportConfig, 
+  compileDailyReportData, 
+  dispatchDailyReport 
+} from '../utils/emailDispatcher';
+import { DailyCompiledReport, DailyReportConfig } from '../types';
 
 interface DashboardProps {
   projects: Project[];
@@ -35,13 +43,14 @@ interface DashboardProps {
   onNavigateToHR?: () => void;
   onNavigateToWorkload?: () => void;
   onUpdateProject?: (project: Project) => void;
+  onOpenDailyReportSettings?: () => void;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
   projects, onSelectProject, onNewProject, currentUser, todos, onToggleTodo, 
   onAddTodo, onUpdatePayment, pettyCash, clientList, staffList, events, 
   onAddEvent, onDeleteEvent, onSendMessage, leaveRequests = [], onUpdateLeave, onNavigateToHR,
-  onNavigateToWorkload, onUpdateProject
+  onNavigateToWorkload, onUpdateProject, onOpenDailyReportSettings
 }) => {
   const [dashboardTab, setDashboardTab] = useState<'telemetry' | 'gmail' | 'drive' | 'calendar'>('telemetry');
   const [isNewEventModalOpen, setIsNewEventModalOpen] = useState(false);
@@ -93,6 +102,43 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [postponeError, setPostponeError] = useState<string | null>(null);
   const [priorityDropdownTaskId, setPriorityDropdownTaskId] = useState<string | null>(null);
   const [activeConsoleTab, setActiveConsoleTab] = useState<'directives' | 'ai'>('directives');
+
+  // Daily EOD Report state
+  const [dailyReportConfig, setDailyReportConfig] = useState<DailyReportConfig>(() => getStoredDailyReportConfig());
+  const [dailyReport, setDailyReport] = useState<DailyCompiledReport | null>(() => {
+    return getLatestDailyReport() || compileDailyReportData({ projects, todos, staffList });
+  });
+  const [isDispatchingReport, setIsDispatchingReport] = useState(false);
+
+  // Sync daily report when projects, todos, or staff change
+  useEffect(() => {
+    const latest = getLatestDailyReport();
+    if (latest && latest.reportDate === new Date().toISOString().split('T')[0]) {
+      setDailyReport(latest);
+    } else {
+      setDailyReport(compileDailyReportData({ projects, todos, staffList }));
+    }
+    setDailyReportConfig(getStoredDailyReportConfig());
+  }, [projects, todos, staffList]);
+
+  const handleManualDispatchReport = async () => {
+    setIsDispatchingReport(true);
+    try {
+      const res = await dispatchDailyReport({
+        config: dailyReportConfig,
+        projects,
+        todos,
+        staffList,
+        triggeredBy: currentUser.name
+      });
+      setDailyReport(res.report);
+      setDailyReportConfig(getStoredDailyReportConfig());
+    } catch (err) {
+      console.error('Error dispatching daily report from dashboard:', err);
+    } finally {
+      setIsDispatchingReport(false);
+    }
+  };
 
   useEffect(() => {
     const handleClickOutsideTag = (e: MouseEvent) => {
@@ -1588,6 +1634,20 @@ const Dashboard: React.FC<DashboardProps> = ({
               </div>
             </div>
           </div>
+
+          {/* EOD DAILY OPERATIONS COMPILATION // 7:00 PM AUTOMATED REPORTING (RESTRICTED TO ADMINS, DIRECTORS, GM) */}
+          {(isSuperAdmin || isAdmin || isGM || isDirector) && (
+            <DailyReportWidget
+              report={dailyReport}
+              config={dailyReportConfig}
+              onOpenSettings={() => {
+                if (onOpenDailyReportSettings) onOpenDailyReportSettings();
+              }}
+              onManualDispatch={handleManualDispatchReport}
+              isDispatching={isDispatchingReport}
+              canManageSettings={isSuperAdmin || isAdmin || isGM || isDirector}
+            />
+          )}
 
           {/* 1. HERO BLOCK: JARVIS Liquid Glass HUD */}
           <div className="liquid-glass-card hud-frame rounded-sm p-8 sm:p-12 relative overflow-hidden shadow-[0_0_50px_-10px_rgba(var(--jarvis-primary-rgb),0.25)]">
