@@ -17,7 +17,11 @@ import MonthlyCalendar from './components/MonthlyCalendar';
 import AccessManagement from './components/AccessManagement';
 import WorkloadDashboard from './components/WorkloadDashboard';
 import Footer from './components/Footer';
-import { db, isFirebaseEnabled } from './firebase';
+import PendingApprovalScreen from './components/PendingApprovalScreen';
+import RejectedAccessScreen from './components/RejectedAccessScreen';
+import SuspendedAccessScreen from './components/SuspendedAccessScreen';
+import { db, isFirebaseEnabled, auth, logoutGoogle } from './firebase';
+import { supabase, isSupabaseEnabled, loadAllAccessRequests, disconnectGoogleWorkspaceToken } from './supabase';
 import { doc, setDoc, onSnapshot, collection, updateDoc, addDoc, query, orderBy, limit, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { LogOut, Users, FileText, Hexagon, Building2, Bell, Clock, DollarSign, UserCircle, MessageSquare, ListTodo, X, Building, Zap, Target, CheckCircle2, Plus, Calendar, Timer, AlertCircle, Archive, LayoutGrid, Heart, ChevronRight, ChevronLeft, Search, Check, Trash2, StickyNote, Send, Link as LinkIcon, Bookmark, Briefcase, ChevronDown, CloudOff, Cloud, RefreshCw, Database, ServerCrash, ShieldCheck, HardDrive, Cpu, Bot, CheckCircle, Compass, Circle, Menu, ArrowRight, Layers, Radio, RadioTower, Video, Mic, Globe, ShieldAlert, Lock, BarChart2, Sliders, Sparkles, Sun, Flame } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
@@ -38,7 +42,20 @@ const INITIAL_AGENCY_PROFILE: AgencyProfile = {
 };
 
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<StaffMember | null>(null);
+  const [currentUser, setCurrentUser] = useState<StaffMember | null>(() => {
+    try {
+      const saved = localStorage.getItem('mw_current_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('mw_current_user', JSON.stringify(currentUser));
+    }
+  }, [currentUser]);
   const [storageMode, setStorageMode] = useState<StorageMode>(isFirebaseEnabled ? 'cloud' : 'local');
   
   // App-wide state
@@ -330,7 +347,23 @@ const App: React.FC = () => {
     if (todo) { const updated = { ...todo, completed: !todo.completed }; await writeData('todos', id, updated, setTodos, todos); }
   };
 
-  const handleLogout = () => { setCurrentUser(null); setView('dashboard'); setIsSidebarOpen(false); };
+  const handleLogout = async () => {
+    try {
+      localStorage.removeItem('mw_current_user');
+      if (isFirebaseEnabled && auth) {
+        await logoutGoogle().catch(() => {});
+      }
+      if (isSupabaseEnabled && supabase) {
+        await supabase.auth.signOut().catch(() => {});
+      }
+      disconnectGoogleWorkspaceToken();
+    } catch (e) {
+      console.debug('Logout notice:', e);
+    }
+    setCurrentUser(null);
+    setView('dashboard');
+    setIsSidebarOpen(false);
+  };
 
   const handleNav = (targetView: ViewState) => {
     setView(targetView);
@@ -773,6 +806,51 @@ const App: React.FC = () => {
   }, [canViewProjects, canAccessWorkload, canViewFinance, isSuperAdmin]);
 
   if (!currentUser) return <Login onLogin={setCurrentUser} staffList={staffList} />;
+
+  // Google Onboarding / Access Status Gates
+  if (currentUser.accountStatus === 'pending') {
+    return (
+      <PendingApprovalScreen
+        request={{
+          email: currentUser.email,
+          fullName: currentUser.name,
+          avatarUrl: currentUser.avatarUrl,
+          requestedAt: currentUser.joinedDate ? new Date(currentUser.joinedDate).toISOString() : new Date().toISOString()
+        }}
+        onRefresh={async () => {
+          try {
+            const reqs = await loadAllAccessRequests();
+            const found = reqs.find(r => r.email.toLowerCase() === currentUser.email.toLowerCase());
+            if (found && found.status === 'approved') {
+              const updated: StaffMember = {
+                ...currentUser,
+                accountStatus: 'approved',
+                role: found.assignedRole || currentUser.role,
+                department: found.assignedDepartment || currentUser.department
+              };
+              setCurrentUser(updated);
+              localStorage.setItem('mw_current_user', JSON.stringify(updated));
+            } else if (found && found.status === 'rejected') {
+              const updated = { ...currentUser, accountStatus: 'rejected' as const };
+              setCurrentUser(updated);
+              localStorage.setItem('mw_current_user', JSON.stringify(updated));
+            }
+          } catch (e) {
+            console.debug('Refresh status error:', e);
+          }
+        }}
+        onSignOut={handleLogout}
+      />
+    );
+  }
+
+  if (currentUser.accountStatus === 'rejected') {
+    return <RejectedAccessScreen email={currentUser.email} onSignOut={handleLogout} />;
+  }
+
+  if (currentUser.accountStatus === 'suspended') {
+    return <SuspendedAccessScreen email={currentUser.email} onSignOut={handleLogout} />;
+  }
 
   return (
     <div className="min-h-screen bg-[var(--jarvis-bg-dark)] text-white flex flex-col font-sans selection:bg-white selection:text-black overflow-hidden relative">

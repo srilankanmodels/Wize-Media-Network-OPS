@@ -42,6 +42,19 @@ export const auth = app ? getAuth(app) : null;
 export const storage = app ? getStorage(app) : null;
 export const isFirebaseEnabled = !!app;
 
+// Standard Google Auth Provider for pure application login (no sensitive scopes)
+export const loginGoogleProvider = new GoogleAuthProvider();
+loginGoogleProvider.setCustomParameters({
+  prompt: 'select_account'
+});
+
+// Pure Google login for application sign-in
+export const signInWithGoogle = async (): Promise<{ user: User }> => {
+  if (!auth) throw new Error("Firebase Auth is not initialized");
+  const result = await signInWithPopup(auth, loginGoogleProvider);
+  return { user: result.user };
+};
+
 // Configure Google Workspace Provider (Gmail, Calendar, Drive)
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope("https://www.googleapis.com/auth/gmail.readonly");
