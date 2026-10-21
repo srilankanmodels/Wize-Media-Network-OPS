@@ -1255,6 +1255,7 @@ const App: React.FC = () => {
               staffList={staffList} 
               events={events} 
               onAddEvent={(ev) => writeData('events', ev.id, ev, setEvents, events)} 
+              onUpdateEvent={(ev) => writeData('events', ev.id, ev, setEvents, events)} 
               onDeleteEvent={(id) => deleteData('events', id, setEvents, events)}
               onUpdatePayment={handleUpdatePayment} 
               pettyCash={pettyCash} 
@@ -1303,6 +1304,7 @@ const App: React.FC = () => {
               staffList={staffList} 
               leaveRequests={leaveRequests} 
               onAddEvent={(ev) => writeData('events', ev.id, ev, setEvents, events)} 
+              onUpdateEvent={(ev) => writeData('events', ev.id, ev, setEvents, events)} 
               onDeleteEvent={(id) => deleteData('events', id, setEvents, events)}
               currentUser={currentUser} 
               onNotifyStaff={handleNotifyStaff}

@@ -479,9 +479,19 @@ export interface Todo {
 export interface CalendarEvent {
   id: string;
   title: string;
-  date: Date;
-  type: 'deadline' | 'meeting' | 'personal';
+  date: Date | string;
+  type: 'deadline' | 'meeting' | 'personal' | 'note' | string;
   userId?: string; 
+  createdBy?: string;
+  createdByName?: string;
+  description?: string;
+  location?: string;
+  startTime?: string;
+  endTime?: string;
+  taggedStaffIds?: string[];
+  taggedStaffNames?: string[];
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
 }
 
 // Procedure interfaces for company-wide SOP and operational protocols

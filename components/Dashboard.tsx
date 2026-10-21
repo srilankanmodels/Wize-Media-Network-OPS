@@ -32,6 +32,7 @@ interface DashboardProps {
   onAddTodo: (text: string, due?: Date, taggedStaffIds?: string[], isDaily?: boolean) => void;
   events: CalendarEvent[];
   onAddEvent: (event: CalendarEvent) => void;
+  onUpdateEvent?: (event: CalendarEvent) => void;
   onDeleteEvent?: (eventId: string) => void;
   staffList: StaffMember[];
   onUpdatePayment: (update: PaymentUpdate) => void;
@@ -49,7 +50,7 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ 
   projects, onSelectProject, onNewProject, currentUser, todos, onToggleTodo, 
   onAddTodo, onUpdatePayment, pettyCash, clientList, staffList, events, 
-  onAddEvent, onDeleteEvent, onSendMessage, leaveRequests = [], onUpdateLeave, onNavigateToHR,
+  onAddEvent, onUpdateEvent, onDeleteEvent, onSendMessage, leaveRequests = [], onUpdateLeave, onNavigateToHR,
   onNavigateToWorkload, onUpdateProject, onOpenDailyReportSettings
 }) => {
   const [dashboardTab, setDashboardTab] = useState<'telemetry' | 'gmail' | 'drive' | 'calendar'>('telemetry');
@@ -751,6 +752,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           staffList={staffList} 
           leaveRequests={leaveRequests} 
           onAddEvent={onAddEvent} 
+          onUpdateEvent={onUpdateEvent}
           onDeleteEvent={onDeleteEvent}
           currentUser={currentUser} 
         />
