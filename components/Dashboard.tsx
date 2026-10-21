@@ -21,7 +21,7 @@ interface DashboardProps {
   currentUser: StaffMember;
   todos: Todo[];
   onToggleTodo: (id: string) => void;
-  onAddTodo: (text: string, due?: Date) => void;
+  onAddTodo: (text: string, due?: Date, taggedStaffIds?: string[], isDaily?: boolean) => void;
   events: CalendarEvent[];
   onAddEvent: (event: CalendarEvent) => void;
   onDeleteEvent?: (eventId: string) => void;
@@ -79,15 +79,30 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isTimerPickerOpen, setIsTimerPickerOpen] = useState(false);
 
-  // Active Directives controls & postponement states
-  const [directiveFilter, setDirectiveFilter] = useState<'ALL' | 'TRACKING' | 'CRITICAL' | 'OVERDUE' | 'POSTPONED'>('ALL');
+  // Active Directives & To-Do List controls & postponement states
+  const [directiveFilter, setDirectiveFilter] = useState<'DAILY' | 'ALL' | 'CRITICAL' | 'OVERDUE' | 'PERSONAL' | 'TRACKING' | 'POSTPONED'>('DAILY');
   const [directiveSort, setDirectiveSort] = useState<'DEADLINE' | 'PRIORITY' | 'PROJECT'>('DEADLINE');
+  const [newQuickTodo, setNewQuickTodo] = useState('');
+  const [selectedTaggedStaffIds, setSelectedTaggedStaffIds] = useState<string[]>([]);
+  const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
+  const [isDailyQuickTask, setIsDailyQuickTask] = useState(true);
+  const tagDropdownRef = useRef<HTMLDivElement>(null);
   const [postponeModalTask, setPostponeModalTask] = useState<{ task: any; project: Project; stepId: number; projectName: string } | null>(null);
   const [postponeNewDate, setPostponeNewDate] = useState('');
   const [postponeReason, setPostponeReason] = useState('');
   const [postponeError, setPostponeError] = useState<string | null>(null);
   const [priorityDropdownTaskId, setPriorityDropdownTaskId] = useState<string | null>(null);
   const [activeConsoleTab, setActiveConsoleTab] = useState<'directives' | 'ai'>('directives');
+
+  useEffect(() => {
+    const handleClickOutsideTag = (e: MouseEvent) => {
+      if (tagDropdownRef.current && !tagDropdownRef.current.contains(e.target as Node)) {
+        setIsTagDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutsideTag);
+    return () => document.removeEventListener('mousedown', handleClickOutsideTag);
+  }, []);
 
   useEffect(() => {
     const clockInterval = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -270,10 +285,55 @@ const Dashboard: React.FC<DashboardProps> = ({
     );
   }, [projects, currentUser, isAdmin, isSuperAdmin, isGM]);
 
+  const isDueTodayOrOverdue = (dateVal?: Date | string) => {
+    if (!dateVal) return true;
+    const d = new Date(dateVal);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+    return d.getTime() <= todayEnd.getTime();
+  };
+
+  const myPersonalTodos = useMemo(() => {
+    return (todos || []).filter(t => 
+      t.userId === currentUser.id || 
+      t.createdById === currentUser.id ||
+      t.assignedTo === currentUser.id ||
+      (t.taggedStaffIds && t.taggedStaffIds.includes(currentUser.id))
+    );
+  }, [todos, currentUser.id]);
+
+  const dailyPersonalTodos = useMemo(() => {
+    return myPersonalTodos.filter(t => t.isDaily !== false || isDueTodayOrOverdue(t.deadline));
+  }, [myPersonalTodos]);
+
+  const dailyDirectivesCount = useMemo(() => {
+    return currentUserTasks.filter(t => t.isOverdue || t.priority === 'Critical' || isDueTodayOrOverdue(t.effectiveDeadline)).length;
+  }, [currentUserTasks]);
+
+  const totalDailyPendingCount = dailyPersonalTodos.filter(t => !t.completed).length + dailyDirectivesCount;
+
+  const totalMyPendingCount = currentUserTasks.length + myPersonalTodos.filter(t => !t.completed).length;
+
+  const handleToggleTagStaff = (staffId: string) => {
+    setSelectedTaggedStaffIds(prev => 
+      prev.includes(staffId) ? prev.filter(id => id !== staffId) : [...prev, staffId]
+    );
+  };
+
+  const handleAddQuickTodo = () => {
+    if (!newQuickTodo.trim()) return;
+    onAddTodo(newQuickTodo.trim(), undefined, selectedTaggedStaffIds, isDailyQuickTask);
+    setNewQuickTodo('');
+    setSelectedTaggedStaffIds([]);
+    setIsTagDropdownOpen(false);
+  };
+
   const filteredAndSortedDirectives = useMemo(() => {
     let list = [...currentUserTasks];
 
-    if (directiveFilter === 'TRACKING') {
+    if (directiveFilter === 'DAILY') {
+      list = list.filter(t => t.isOverdue || t.priority === 'Critical' || isDueTodayOrOverdue(t.effectiveDeadline));
+    } else if (directiveFilter === 'TRACKING') {
       list = list.filter(t => activeTimerTask?.taskId === t.id && (!activeTimerTask?.projectId || activeTimerTask?.projectId === t.projectId));
     } else if (directiveFilter === 'CRITICAL') {
       list = list.filter(t => t.priority === 'Critical' || t.priority === 'High');
@@ -281,6 +341,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       list = list.filter(t => t.isOverdue);
     } else if (directiveFilter === 'POSTPONED') {
       list = list.filter(t => t.isPostponed);
+    } else if (directiveFilter === 'PERSONAL') {
+      return [];
     }
 
     if (directiveSort === 'PRIORITY') {
@@ -887,6 +949,646 @@ const Dashboard: React.FC<DashboardProps> = ({
             </div>
           )}
 
+          {/* TOP PRIORITY // HIGHLIGHTED: MY TO DO LIST & EVENT HORIZON */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in slide-in-from-top-3 duration-300">
+            {/* 01 // HIGHLIGHTED: MY TO DO LIST */}
+            <div className="lg:col-span-2 bg-[#090a0f] border-2 border-[var(--jarvis-primary)] rounded-sm flex flex-col h-[620px] overflow-hidden shadow-[0_0_35px_-5px_rgba(var(--jarvis-primary-rgb),0.35)] relative">
+              {/* Top Command Bar & Tab Navigation */}
+              <div className="p-3.5 border-b border-[var(--jarvis-border)] bg-gradient-to-r from-[rgba(var(--jarvis-primary-rgb),0.18)] via-[#0d0e14] to-[#0d0e14] flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveConsoleTab('directives')}
+                    className={`px-4 py-2 rounded-sm font-mono text-xs uppercase tracking-wider flex items-center gap-2.5 transition-all cursor-pointer ${
+                      activeConsoleTab === 'directives'
+                        ? 'bg-[var(--jarvis-primary)] text-black font-black shadow-[0_0_15px_rgba(var(--jarvis-primary-rgb),0.5)]'
+                        : 'text-neutral-300 hover:text-white hover:bg-neutral-800/60'
+                    }`}
+                  >
+                    <ListTodo size={16} strokeWidth={2.5} />
+                    <span className="font-heading font-black tracking-tight text-sm">MY TO DO LIST</span>
+                    <span className={`px-2 py-0.5 rounded-xs font-mono text-[10px] font-black ${
+                      activeConsoleTab === 'directives' ? 'bg-black text-[var(--jarvis-primary)]' : 'bg-neutral-800 text-neutral-300'
+                    }`}>
+                      {totalMyPendingCount}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveConsoleTab('ai')}
+                    className={`px-3 py-2 rounded-sm font-mono text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
+                      activeConsoleTab === 'ai'
+                        ? 'bg-white text-black font-black shadow-sm'
+                        : 'text-neutral-400 hover:text-white hover:bg-neutral-800/60'
+                    }`}
+                  >
+                    <Bot size={14} />
+                    <span>WIZEMIND AI STRATEGIST</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {activeTimerTask && (
+                    <div className="flex items-center gap-2 px-2.5 py-1 bg-emerald-950/80 border border-emerald-500/50 rounded-sm font-mono text-[11px] text-emerald-300 animate-pulse">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                      <span className="font-bold">AUTO-TRACKING:</span>
+                      <span className="tabular-nums font-black text-white">{formatTime(elapsedTime)}</span>
+                    </div>
+                  )}
+                  <span className="px-2.5 py-1 bg-[rgba(var(--jarvis-primary-rgb),0.15)] border border-[var(--jarvis-primary)]/50 rounded-xs font-mono text-[9px] text-[var(--jarvis-primary)] uppercase tracking-widest font-black flex items-center gap-1.5 shadow-[0_0_10px_rgba(var(--jarvis-primary-rgb),0.2)]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] animate-pulse" />
+                    PRIMARY FOCUS
+                  </span>
+                </div>
+              </div>
+
+              {activeConsoleTab === 'directives' ? (
+                <div className="flex-1 flex flex-col min-h-0 bg-[#0a0b0e]">
+                  {/* Quick Add To-Do Item Bar with Staff Tagging & Daily Switch */}
+                  <div className="p-3.5 bg-[#0b0c11] border-b border-neutral-800/80 space-y-2.5 relative">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="w-6 h-6 rounded-xs bg-[var(--jarvis-primary)]/10 border border-[var(--jarvis-primary)]/30 flex items-center justify-center text-[var(--jarvis-primary)] shrink-0">
+                        <Plus size={13} strokeWidth={2.5} />
+                      </div>
+
+                      <input
+                        type="text"
+                        value={newQuickTodo}
+                        onChange={e => setNewQuickTodo(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddQuickTodo();
+                          }
+                        }}
+                        placeholder="Quick-add task to MY TO DO LIST (press Enter)..."
+                        className="flex-1 min-w-[200px] bg-transparent text-xs font-mono text-white placeholder:text-neutral-500 outline-none"
+                      />
+
+                      {/* Daily Task Switch */}
+                      <button
+                        type="button"
+                        onClick={() => setIsDailyQuickTask(!isDailyQuickTask)}
+                        className={`px-2.5 py-1.5 rounded-xs font-mono text-[10px] uppercase font-bold tracking-wider transition-all cursor-pointer flex items-center gap-1.5 border ${
+                          isDailyQuickTask
+                            ? 'bg-amber-400/20 text-amber-300 border-amber-400/50 shadow-[0_0_10px_rgba(251,191,36,0.2)]'
+                            : 'bg-[#12141a] text-neutral-500 border-neutral-800 hover:text-neutral-300'
+                        }`}
+                        title="Include in DAILY tab (default: ON)"
+                      >
+                        <Clock size={11} />
+                        <span>{isDailyQuickTask ? 'Daily: YES' : 'Daily: NO'}</span>
+                      </button>
+
+                      {/* Tag Staff Button & Popover */}
+                      <div className="relative" ref={tagDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsTagDropdownOpen(!isTagDropdownOpen)}
+                          className={`px-2.5 py-1.5 rounded-xs font-mono text-[10px] uppercase font-bold tracking-wider transition-all cursor-pointer flex items-center gap-1.5 border ${
+                            selectedTaggedStaffIds.length > 0
+                              ? 'bg-[var(--jarvis-primary)] text-black font-black border-[var(--jarvis-primary)] shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.35)]'
+                              : 'bg-[#12141a] text-neutral-300 border-neutral-700 hover:border-neutral-500'
+                          }`}
+                          title="Tag staff members to assign or share this task"
+                        >
+                          <Users size={12} />
+                          <span>{selectedTaggedStaffIds.length > 0 ? `@ Tagged (${selectedTaggedStaffIds.length})` : '@ Tag People'}</span>
+                          <ChevronDown size={11} className={isTagDropdownOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                        </button>
+
+                        {/* Staff Tagging Dropdown Popover */}
+                        {isTagDropdownOpen && (
+                          <div className="absolute right-0 top-full mt-2 w-72 bg-[#101218] border border-neutral-700 rounded-sm shadow-2xl z-[120] p-2 space-y-1.5 animate-in fade-in zoom-in-95 duration-150">
+                            <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800 px-1 font-mono">
+                              <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-bold">
+                                Tag Team Members
+                              </span>
+                              {selectedTaggedStaffIds.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedTaggedStaffIds([])}
+                                  className="text-[9px] text-rose-400 hover:underline uppercase cursor-pointer"
+                                >
+                                  Clear ({selectedTaggedStaffIds.length})
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="max-h-56 overflow-y-auto space-y-1 custom-scrollbar pr-0.5">
+                              {staffList.map(s => {
+                                const isSelected = selectedTaggedStaffIds.includes(s.id);
+                                return (
+                                  <button
+                                    key={s.id}
+                                    type="button"
+                                    onClick={() => handleToggleTagStaff(s.id)}
+                                    className={`w-full text-left p-2 rounded-xs flex items-center justify-between gap-2 cursor-pointer transition-all ${
+                                      isSelected 
+                                        ? 'bg-[rgba(var(--jarvis-primary-rgb),0.15)] border border-[var(--jarvis-primary)]/50 text-white' 
+                                        : 'hover:bg-neutral-800/70 border border-transparent text-neutral-300'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <img 
+                                        src={s.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=80&q=80'} 
+                                        alt="" 
+                                        className="w-5 h-5 rounded-full object-cover border border-neutral-700 shrink-0" 
+                                      />
+                                      <div className="min-w-0 truncate">
+                                        <div className="font-heading font-black text-xs uppercase leading-tight truncate">
+                                          {s.name} {s.id === currentUser.id && '(You)'}
+                                        </div>
+                                        <div className="font-mono text-[9px] text-neutral-400 uppercase truncate">
+                                          {s.role} // {s.department}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className={`w-4 h-4 rounded-xs border flex items-center justify-center shrink-0 ${
+                                      isSelected 
+                                        ? 'bg-[var(--jarvis-primary)] border-[var(--jarvis-primary)] text-black' 
+                                        : 'border-neutral-700 text-transparent'
+                                    }`}>
+                                      <Check size={10} strokeWidth={3} />
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Add Button */}
+                      <button
+                        type="button"
+                        disabled={!newQuickTodo.trim()}
+                        onClick={handleAddQuickTodo}
+                        className="px-3.5 py-1.5 bg-[var(--jarvis-primary)] hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed text-black font-mono font-black text-[10px] uppercase rounded-xs transition-all cursor-pointer shrink-0 shadow-sm"
+                      >
+                        + Add Task
+                      </button>
+                    </div>
+
+                    {/* Tagged Staff Chips row */}
+                    {selectedTaggedStaffIds.length > 0 && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-neutral-800/60 font-mono text-[10px]">
+                        <span className="text-neutral-400 text-[9px] uppercase">Tagged:</span>
+                        {selectedTaggedStaffIds.map(staffId => {
+                          const staff = staffList.find(s => s.id === staffId);
+                          return (
+                            <span 
+                              key={staffId}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-xs bg-black/60 border border-[var(--jarvis-border)] text-white text-[10px]"
+                            >
+                              <span className="text-[var(--jarvis-primary)] font-bold">@{staff?.name?.split(' ')[0] || 'Staff'}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleTagStaff(staffId)}
+                                className="text-neutral-400 hover:text-rose-400 cursor-pointer ml-0.5"
+                              >
+                                <X size={10} />
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Filter Pills & Sort Controls */}
+                  <div className="p-3 border-b border-neutral-800/80 bg-[#0d0e13] flex flex-wrap items-center justify-between gap-2.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {(['DAILY', 'ALL', 'CRITICAL', 'OVERDUE', 'PERSONAL', 'TRACKING', 'POSTPONED'] as const).map(f => {
+                        const count = f === 'DAILY' ? totalDailyPendingCount
+                          : f === 'ALL' ? totalMyPendingCount
+                          : f === 'TRACKING' ? currentUserTasks.filter(t => activeTimerTask?.taskId === t.id && (!activeTimerTask?.projectId || activeTimerTask?.projectId === t.projectId)).length
+                          : f === 'CRITICAL' ? currentUserTasks.filter(t => t.priority === 'Critical' || t.priority === 'High').length
+                          : f === 'OVERDUE' ? currentUserTasks.filter(t => t.isOverdue).length
+                          : f === 'PERSONAL' ? myPersonalTodos.filter(t => !t.completed).length
+                          : currentUserTasks.filter(t => t.isPostponed).length;
+
+                        return (
+                          <button
+                            key={f}
+                            type="button"
+                            onClick={() => setDirectiveFilter(f)}
+                            className={`px-2.5 py-1 rounded-xs font-mono text-[10px] uppercase font-bold tracking-wider transition-all cursor-pointer flex items-center gap-1.5 border ${
+                              directiveFilter === f
+                                ? 'bg-white text-black border-white shadow-sm'
+                                : 'bg-[#12141a] text-neutral-400 border-neutral-800 hover:border-neutral-700 hover:text-neutral-200'
+                            }`}
+                          >
+                            {f === 'DAILY' && <Clock size={11} className={directiveFilter === 'DAILY' ? 'text-black' : 'text-amber-400'} />}
+                            <span>{f}</span>
+                            <span className={`px-1 py-0.2 rounded-xs text-[9px] ${directiveFilter === f ? 'bg-black text-white' : 'bg-neutral-800 text-neutral-400'}`}>
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex items-center gap-2 font-mono text-[10px]">
+                      <span className="text-neutral-400 uppercase">SORT:</span>
+                      <div className="flex items-center gap-1 bg-[#12141a] p-0.5 rounded-xs border border-neutral-800">
+                        {(['DEADLINE', 'PRIORITY', 'PROJECT'] as const).map(s => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => setDirectiveSort(s)}
+                            className={`px-2 py-0.5 rounded-xs font-bold uppercase transition-all cursor-pointer ${
+                              directiveSort === s ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-white'
+                            }`}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Directives & To-Dos List */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                    {/* Action Items Section (when in DAILY, ALL, or PERSONAL filter) */}
+                    {(directiveFilter === 'DAILY' || directiveFilter === 'ALL' || directiveFilter === 'PERSONAL') && (
+                      (() => {
+                        const displayedTodos = directiveFilter === 'DAILY' ? dailyPersonalTodos : myPersonalTodos;
+                        if (displayedTodos.length === 0) return null;
+
+                        return (
+                          <div className="space-y-2 mb-3">
+                            <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-widest flex items-center justify-between px-1">
+                              <span className="flex items-center gap-1.5 text-[var(--jarvis-primary)] font-bold">
+                                <CheckCircle2 size={12} />
+                                <span>{directiveFilter === 'DAILY' ? "DAILY TASK QUEUE // TODAY'S FOCUS" : "PERSONAL ACTION ITEMS"} ({displayedTodos.filter(t => !t.completed).length} pending)</span>
+                              </span>
+                              {displayedTodos.some(t => t.completed) && (
+                                <span className="text-neutral-500 text-[9px]">{displayedTodos.filter(t => t.completed).length} completed</span>
+                              )}
+                            </div>
+                            {displayedTodos.map(pt => (
+                              <div
+                                key={pt.id}
+                                className={`p-3 rounded-sm border transition-all flex flex-col gap-2 ${
+                                  pt.completed 
+                                    ? 'bg-[#0c0d12]/60 border-neutral-800/40 opacity-50' 
+                                    : 'bg-[#12141c] border-neutral-800 hover:border-[var(--jarvis-primary)]/60'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-3 min-w-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => onToggleTodo(pt.id)}
+                                      className={`w-5 h-5 rounded-xs border flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                                        pt.completed 
+                                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' 
+                                          : 'border-neutral-700 hover:border-white text-transparent'
+                                      }`}
+                                    >
+                                      <Check size={12} strokeWidth={3} className={pt.completed ? 'opacity-100' : 'opacity-0'} />
+                                    </button>
+                                    <span className={`text-xs font-mono font-medium ${pt.completed ? 'line-through text-neutral-500' : 'text-neutral-200'}`}>
+                                      {pt.text}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    {pt.isDaily && (
+                                      <span className="px-2 py-0.5 rounded-xs bg-amber-950/60 border border-amber-500/40 font-mono text-[9px] text-amber-300 uppercase tracking-wider font-bold">
+                                        Daily
+                                      </span>
+                                    )}
+                                    <span className="px-2 py-0.5 rounded-xs bg-black/60 border border-neutral-800 font-mono text-[9px] text-neutral-400 uppercase tracking-wider">
+                                      Task
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Tagged People and Originator Info */}
+                                {((pt.taggedStaffNames && pt.taggedStaffNames.length > 0) || (pt.createdByName && pt.createdById !== currentUser.id)) && (
+                                  <div className="flex flex-wrap items-center gap-2 pl-8 font-mono text-[10px]">
+                                    {pt.taggedStaffNames && pt.taggedStaffNames.length > 0 && (
+                                      <div className="flex items-center gap-1 text-[var(--jarvis-primary)] bg-[rgba(var(--jarvis-primary-rgb),0.1)] px-2 py-0.5 rounded-xs border border-[var(--jarvis-primary)]/30">
+                                        <Users size={11} className="shrink-0" />
+                                        <span>Tagged: <strong className="text-white">{pt.taggedStaffNames.join(', ')}</strong></span>
+                                      </div>
+                                    )}
+                                    {pt.createdByName && pt.createdById !== currentUser.id && (
+                                      <span className="text-neutral-400 text-[9px]">
+                                        Assigned by: <strong className="text-neutral-200">{pt.createdByName}</strong>
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    )}
+
+                    {filteredAndSortedDirectives.length === 0 && ((directiveFilter !== 'DAILY' && directiveFilter !== 'ALL' && directiveFilter !== 'PERSONAL') ? true : (directiveFilter === 'DAILY' ? dailyPersonalTodos.length === 0 : myPersonalTodos.length === 0)) ? (
+                      <div className="text-center py-20 opacity-40 font-mono text-xs uppercase flex flex-col items-center justify-center gap-2">
+                        <CheckCircle2 size={32} className="text-emerald-400" />
+                        <span>ALL {directiveFilter === 'DAILY' ? 'DAILY ' : ''}TO-DO ITEMS COMPLETED // SYSTEM NOMINAL</span>
+                      </div>
+                    ) : (
+                      filteredAndSortedDirectives.map((t, idx) => {
+                        const isCurrentlyTracking = activeTimerTask?.taskId === t.id && (!activeTimerTask?.projectId || activeTimerTask?.projectId === t.projectId);
+                        const taskKey = `${t.projectId || 'p'}-${t.stepId || 's'}-${t.id}`;
+                        const priorityWeights: Record<string, string> = {
+                          Critical: 'bg-rose-950 text-rose-300 border-rose-500/60 shadow-[0_0_10px_rgba(244,63,94,0.3)]',
+                          High: 'bg-amber-950 text-amber-300 border-amber-500/60',
+                          Medium: 'bg-sky-950 text-sky-300 border-sky-500/60',
+                          Low: 'bg-neutral-900 text-neutral-400 border-neutral-700'
+                        };
+
+                        return (
+                          <div
+                            key={`${taskKey}-${idx}`}
+                            style={{ zIndex: priorityDropdownTaskId === taskKey ? 50 : Math.max(1, 40 - idx) }}
+                            className={`p-4 rounded-sm border transition-all duration-200 relative ${
+                              t.isOverdue 
+                                ? 'bg-[#160c0e] border-rose-600/50 shadow-[0_0_15px_-3px_rgba(244,63,94,0.2)]'
+                                : t.isPostponed 
+                                  ? 'bg-[#15110c] border-amber-600/50'
+                                  : isCurrentlyTracking
+                                    ? 'bg-[#0c1611] border-emerald-500/60 shadow-[0_0_15px_-3px_rgba(16,185,129,0.2)]'
+                                    : 'bg-[#0f1117] border-neutral-800 hover:border-neutral-700'
+                            }`}
+                          >
+                            {/* Header Row: Campaign Node & Priority Dropdown */}
+                            <div className="flex items-start justify-between gap-3 mb-2 font-mono">
+                              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                                <span className="px-2 py-0.5 bg-[#171922] border border-neutral-700 text-neutral-300 text-[10px] uppercase font-bold">
+                                  {t.projectName} ({t.jobNumber})
+                                </span>
+                                <span className="text-[10px] text-neutral-400 uppercase">
+                                  STEP {t.stepId}: {t.stepTitle}
+                                </span>
+                              </div>
+
+                              {/* Interactive Priority Selector */}
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  onClick={() => setPriorityDropdownTaskId(priorityDropdownTaskId === taskKey ? null : taskKey)}
+                                  className={`px-2.5 py-1 rounded-xs font-mono text-[9px] uppercase font-bold tracking-wider border flex items-center gap-1.5 cursor-pointer transition-all ${
+                                    priorityWeights[t.priority || 'Medium']
+                                  }`}
+                                  title="Click to adjust priority"
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full ${t.priority === 'Critical' ? 'bg-rose-400 animate-ping' : t.priority === 'High' ? 'bg-amber-400' : 'bg-sky-400'}`} />
+                                  <span>{t.priority || 'MEDIUM'}</span>
+                                  <ChevronDown size={10} />
+                                </button>
+
+                                {priorityDropdownTaskId === taskKey && (
+                                  <div className="absolute right-0 top-full mt-1 w-32 bg-[#12141c] border border-neutral-700 rounded-sm shadow-xl z-50 p-1 space-y-1">
+                                    {(['Critical', 'High', 'Medium', 'Low'] as const).map(p => (
+                                      <button
+                                        key={p}
+                                        type="button"
+                                        onClick={() => {
+                                          handleUpdateTaskPriority(t.projectId, t.stepId, t.id, p);
+                                          setPriorityDropdownTaskId(null);
+                                        }}
+                                        className={`w-full text-left px-2 py-1 rounded-xs font-mono text-[10px] uppercase flex items-center justify-between cursor-pointer ${
+                                          t.priority === p ? 'bg-white text-black font-bold' : 'text-neutral-300 hover:bg-neutral-800'
+                                        }`}
+                                      >
+                                        <span>{p}</span>
+                                        {t.priority === p && <Check size={10} />}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Directive Title */}
+                            <div className="text-sm font-bold text-white uppercase tracking-tight mb-3">
+                              {t.text}
+                            </div>
+
+                            {/* Deadline & SLA Status Banner */}
+                            <div className="mb-3">
+                              {t.isPostponed ? (
+                                <div className="p-2.5 bg-amber-950/30 border border-amber-500/40 rounded-xs font-mono text-xs space-y-1">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="flex items-center gap-1.5 text-amber-400 font-bold uppercase text-[10px]">
+                                      <CalendarClock size={13} /> POSTPONED / RESCHEDULED
+                                    </span>
+                                    {t.originalDeadline && (
+                                      <span className="line-through text-neutral-500 text-[10px]">
+                                        ORIGINAL: {new Date(t.originalDeadline).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-amber-200 font-bold text-xs">
+                                    REVISED DEADLINE: {new Date(t.deadline || t.effectiveDeadline).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                  {t.postponedReason && (
+                                    <div className="text-neutral-300 text-[10px] italic border-t border-amber-500/20 pt-1">
+                                      "{t.postponedReason}"
+                                    </div>
+                                  )}
+                                </div>
+                              ) : t.isOverdue ? (
+                                <div className="p-2.5 bg-rose-950/40 border border-rose-500/50 rounded-xs font-mono text-xs space-y-1">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="flex items-center gap-1.5 text-rose-400 font-bold uppercase text-[10px] animate-pulse">
+                                      <AlertCircle size={13} /> OVERDUE BY {t.deadlineMs ? formatOverdue(Date.now() - t.deadlineMs) : 'UNKNOWN'} // SLA BREACH
+                                    </span>
+                                    <span className="text-[10px] text-rose-300 font-semibold">
+                                      SCHEDULED: {new Date(t.effectiveDeadline).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-rose-300/90 flex items-center gap-1">
+                                    <ShieldAlert size={11} className="shrink-0" />
+                                    <span>Escalated to Division Managers & Directors dashboard</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="p-2 bg-neutral-900/60 border border-neutral-800 rounded-xs font-mono text-[11px] text-neutral-300 flex items-center justify-between">
+                                  <div className="flex items-center gap-1.5">
+                                    <Clock size={12} className="text-neutral-400" />
+                                    <span>SCHEDULED DEADLINE:</span>
+                                    <strong className="text-white">
+                                      {new Date(t.effectiveDeadline).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </strong>
+                                  </div>
+                                  <span className="text-[10px] text-neutral-400 uppercase">On Schedule</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Bottom Row: Auto Time-Tracking & Actions */}
+                            <div className="pt-2.5 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 font-mono">
+                              <div className="flex items-center gap-2 text-xs">
+                                <span className="text-neutral-400 text-[10px] uppercase">TIME LOGGED:</span>
+                                <span className="font-bold text-white bg-black/50 px-2 py-0.5 rounded-xs border border-neutral-800">
+                                  {t.timeSpent || 0}m
+                                </span>
+                                {isCurrentlyTracking && (
+                                  <span className="px-2 py-0.5 rounded-xs bg-emerald-950 border border-emerald-500/50 text-emerald-300 text-[10px] font-bold uppercase flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                                    <span>RECORDING {formatTime(elapsedTime)}</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                {/* Start or Pause Live Stopwatch */}
+                                {isCurrentlyTracking ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePauseTaskTracking(t)}
+                                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-black font-black text-[10px] uppercase tracking-wider rounded-sm flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
+                                    title="Pause auto tracking and log elapsed minutes"
+                                  >
+                                    <Pause size={12} fill="currentColor" /> Pause Tracking
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartTaskTracking(t)}
+                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-wider rounded-sm flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
+                                    title="Start live tracking stopwatch for this directive"
+                                  >
+                                    <Play size={12} fill="currentColor" /> Start Task / Track Time
+                                  </button>
+                                )}
+
+                                {/* Mark Task Finished */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleFinishTask(t)}
+                                  className="px-3 py-1.5 bg-white hover:bg-neutral-200 text-black font-black text-[10px] uppercase tracking-wider rounded-sm flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
+                                  title="Finish task, commit tracked time and update campaign progress"
+                                >
+                                  <Check size={12} strokeWidth={3} /> Finish Task
+                                </button>
+
+                                {/* Postpone / Reschedule Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPostponeModalTask({
+                                      task: t,
+                                      project: t.project,
+                                      stepId: t.stepId,
+                                      projectName: t.projectName
+                                    });
+                                    setPostponeNewDate('');
+                                    setPostponeReason('');
+                                    setPostponeError(null);
+                                  }}
+                                  className="px-3 py-1.5 bg-[#171922] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700 font-bold text-[10px] uppercase tracking-wider rounded-sm flex items-center gap-1.5 cursor-pointer transition-all"
+                                  title="Reschedule directive with a new revised deadline and reason"
+                                >
+                                  <CalendarClock size={12} /> Postpone
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* WizeMind AI Strategist Chat Pane */
+                <div className="flex-1 flex flex-col min-h-0 bg-[#0a0b0e]">
+                  <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+                    {aiChat.map((msg, i) => (
+                      <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[85%] p-4 text-xs font-mono leading-relaxed rounded-sm ${
+                          msg.role === 'user' 
+                            ? 'bg-white text-black font-semibold' 
+                            : 'bg-[#12141a] border border-neutral-800 text-neutral-200'
+                        }`}>
+                          {msg.text}
+                        </div>
+                      </div>
+                    ))}
+                    {isAiTyping && (
+                      <div className="flex gap-2 p-3 bg-[#12141a] border border-neutral-800 w-fit rounded-sm font-mono text-[10px] text-neutral-400">
+                        SYNCHRONIZING REASONING MATRIX...
+                      </div>
+                    )}
+                    <div ref={aiEndRef} />
+                  </div>
+
+                  <form onSubmit={handleAiAsk} className="p-4 border-t border-neutral-800 bg-[#0e0f14] flex gap-2">
+                    <input 
+                      value={aiInquiry} 
+                      onChange={e => setAiInquiry(e.target.value)} 
+                      placeholder="Query strategic pipeline, client telemetry, or campaign bottlenecks..." 
+                      className="flex-1 bg-[#14151c] border border-neutral-800 px-4 py-2.5 text-xs font-mono text-white outline-none focus:border-white rounded-sm placeholder:text-neutral-500" 
+                    />
+                    <button 
+                      type="submit" 
+                      className="px-5 py-2.5 bg-white text-black font-black text-xs uppercase tracking-wider hover:bg-neutral-200 rounded-sm transition-colors cursor-pointer"
+                    >
+                      <Send size={14} />
+                    </button>
+                  </form>
+                </div>
+              )}
+            </div>
+
+            {/* Event Horizon */}
+            <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-6 flex flex-col justify-between h-[620px]">
+              <div>
+                <div className="flex items-center justify-between mb-4 border-b border-neutral-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Calendar size={18} className="text-white" />
+                    <span className="font-mono text-[10px] text-neutral-400 uppercase tracking-[0.25em]">
+                      EVENT HORIZON
+                    </span>
+                  </div>
+                  <button 
+                    onClick={() => setIsNewEventModalOpen(true)}
+                    className="w-7 h-7 bg-white text-black hover:bg-neutral-200 flex items-center justify-center rounded-sm text-xs font-bold"
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+
+                <div className="space-y-2.5 overflow-y-auto max-h-[500px] custom-scrollbar pr-1">
+                  {events.length === 0 ? (
+                    <div className="text-center py-16 opacity-30 font-mono text-[10px] uppercase">
+                      Zero Events Synced
+                    </div>
+                  ) : (
+                    (events || []).slice().sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(ev => (
+                      <div key={ev.id} className="p-3 bg-[#101217] border border-neutral-800/80 rounded-sm flex items-start gap-3">
+                        <div className="w-10 h-10 bg-[#161822] border border-neutral-700/60 flex flex-col items-center justify-center shrink-0 rounded-sm font-mono text-white">
+                          <span className="text-xs font-bold leading-none">{new Date(ev.date).getDate()}</span>
+                          <span className="text-[8px] text-neutral-400 uppercase">{new Date(ev.date).toLocaleDateString([], { month: 'short' })}</span>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-bold text-white uppercase truncate">{ev.title}</div>
+                          <div className="font-mono text-[9px] text-neutral-400 uppercase mt-0.5 flex items-center justify-between">
+                            <span>{ev.type}</span>
+                            <span>{new Date(ev.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-neutral-800/80 font-mono text-[9px] text-neutral-400 text-center">
+                {events.length} CALENDAR NODES SYNCHRONIZED
+              </div>
+            </div>
+          </div>
+
           {/* 1. HERO BLOCK: JARVIS Liquid Glass HUD */}
           <div className="liquid-glass-card hud-frame rounded-sm p-8 sm:p-12 relative overflow-hidden shadow-[0_0_50px_-10px_rgba(var(--jarvis-primary-rgb),0.25)]">
             {/* Ambient liquid subtle sheen */}
@@ -1246,407 +1948,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* 5. STRATEGIC INTELLIGENCE CONSOLE & EVENT HORIZON */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 01 // MY ACTIVE DIRECTIVES & STRATEGIC CONSOLE */}
-        <div className="lg:col-span-2 bg-[#0a0b0e] border border-neutral-800 rounded-sm flex flex-col h-[560px] overflow-hidden">
-          {/* Top Command Bar & Tab Navigation */}
-          <div className="p-3.5 border-b border-neutral-800 bg-[#0e0f14] flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setActiveConsoleTab('directives')}
-                className={`px-3 py-1.5 rounded-sm font-mono text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
-                  activeConsoleTab === 'directives'
-                    ? 'bg-white text-black font-black shadow-sm'
-                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/60'
-                }`}
-              >
-                <ListTodo size={14} />
-                <span>MY ACTIVE DIRECTIVES</span>
-                <span className={`px-1.5 py-0.2 rounded-xs font-mono text-[9px] font-black ${
-                  activeConsoleTab === 'directives' ? 'bg-black text-white' : 'bg-neutral-800 text-neutral-300'
-                }`}>
-                  {currentUserTasks.length}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveConsoleTab('ai')}
-                className={`px-3 py-1.5 rounded-sm font-mono text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer ${
-                  activeConsoleTab === 'ai'
-                    ? 'bg-[var(--jarvis-primary)] text-black font-black shadow-sm'
-                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800/60'
-                }`}
-              >
-                <Bot size={14} />
-                <span>WIZEMIND AI STRATEGIST</span>
-              </button>
-            </div>
-
-            {/* Live Timer Indicator if tracking is active */}
-            {activeTimerTask && (
-              <div className="flex items-center gap-2 px-2.5 py-1 bg-emerald-950/60 border border-emerald-500/40 rounded-sm font-mono text-[11px] text-emerald-300 animate-pulse">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span className="font-bold">AUTO-TRACKING:</span>
-                <span className="tabular-nums font-black text-white">{formatTime(elapsedTime)}</span>
-              </div>
-            )}
-          </div>
-
-          {activeConsoleTab === 'directives' ? (
-            <div className="flex-1 flex flex-col min-h-0 bg-[#0a0b0e]">
-              {/* Filter Pills & Sort Controls */}
-              <div className="p-3 border-b border-neutral-800/80 bg-[#0d0e13] flex flex-wrap items-center justify-between gap-2.5">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {(['ALL', 'TRACKING', 'CRITICAL', 'OVERDUE', 'POSTPONED'] as const).map(f => {
-                    const count = f === 'ALL' ? currentUserTasks.length
-                      : f === 'TRACKING' ? currentUserTasks.filter(t => activeTimerTask?.taskId === t.id && (!activeTimerTask?.projectId || activeTimerTask?.projectId === t.projectId)).length
-                      : f === 'CRITICAL' ? currentUserTasks.filter(t => t.priority === 'Critical' || t.priority === 'High').length
-                      : f === 'OVERDUE' ? currentUserTasks.filter(t => t.isOverdue).length
-                      : currentUserTasks.filter(t => t.isPostponed).length;
-
-                    return (
-                      <button
-                        key={f}
-                        type="button"
-                        onClick={() => setDirectiveFilter(f)}
-                        className={`px-2.5 py-1 rounded-xs font-mono text-[10px] uppercase font-bold tracking-wider transition-all cursor-pointer flex items-center gap-1.5 border ${
-                          directiveFilter === f
-                            ? 'bg-neutral-200 text-black border-white'
-                            : 'bg-[#12141a] text-neutral-400 border-neutral-800 hover:border-neutral-700 hover:text-neutral-200'
-                        }`}
-                      >
-                        <span>{f}</span>
-                        <span className={`px-1 py-0.2 rounded-xs text-[9px] ${directiveFilter === f ? 'bg-black text-white' : 'bg-neutral-800 text-neutral-400'}`}>
-                          {count}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center gap-2 font-mono text-[10px]">
-                  <span className="text-neutral-400 uppercase">SORT:</span>
-                  <div className="flex items-center gap-1 bg-[#12141a] p-0.5 rounded-xs border border-neutral-800">
-                    {(['DEADLINE', 'PRIORITY', 'PROJECT'] as const).map(s => (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => setDirectiveSort(s)}
-                        className={`px-2 py-0.5 rounded-xs font-bold uppercase transition-all cursor-pointer ${
-                          directiveSort === s ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-white'
-                        }`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Directives List */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-                {filteredAndSortedDirectives.length === 0 ? (
-                  <div className="text-center py-20 opacity-40 font-mono text-xs uppercase flex flex-col items-center justify-center gap-2">
-                    <CheckCircle2 size={32} className="text-emerald-400" />
-                    <span>ALL ACTIVE DIRECTIVES COMPLETED // SYSTEM NOMINAL</span>
-                  </div>
-                ) : (
-                  filteredAndSortedDirectives.map((t, idx) => {
-                    const isCurrentlyTracking = activeTimerTask?.taskId === t.id && (!activeTimerTask?.projectId || activeTimerTask?.projectId === t.projectId);
-                    const taskKey = `${t.projectId || 'p'}-${t.stepId || 's'}-${t.id}`;
-                    const priorityWeights: Record<string, string> = {
-                      Critical: 'bg-rose-950 text-rose-300 border-rose-500/60 shadow-[0_0_10px_rgba(244,63,94,0.3)]',
-                      High: 'bg-amber-950 text-amber-300 border-amber-500/60',
-                      Medium: 'bg-sky-950 text-sky-300 border-sky-500/60',
-                      Low: 'bg-neutral-900 text-neutral-400 border-neutral-700'
-                    };
-
-                    return (
-                      <div
-                        key={`${taskKey}-${idx}`}
-                        style={{ zIndex: priorityDropdownTaskId === taskKey ? 50 : Math.max(1, 40 - idx) }}
-                        className={`p-4 rounded-sm border transition-all duration-200 relative ${
-                          t.isOverdue 
-                            ? 'bg-[#160c0e] border-rose-600/50 shadow-[0_0_15px_-3px_rgba(244,63,94,0.2)]'
-                            : t.isPostponed 
-                              ? 'bg-[#15110c] border-amber-600/50'
-                              : isCurrentlyTracking
-                                ? 'bg-[#0c1611] border-emerald-500/60 shadow-[0_0_15px_-3px_rgba(16,185,129,0.2)]'
-                                : 'bg-[#0f1117] border-neutral-800 hover:border-neutral-700'
-                        }`}
-                      >
-                        {/* Header Row: Campaign Node & Priority Dropdown */}
-                        <div className="flex items-start justify-between gap-3 mb-2 font-mono">
-                          <div className="flex flex-wrap items-center gap-2 min-w-0">
-                            <span className="px-2 py-0.5 bg-[#171922] border border-neutral-700 text-neutral-300 text-[10px] uppercase font-bold">
-                              {t.projectName} ({t.jobNumber})
-                            </span>
-                            <span className="text-[10px] text-neutral-400 uppercase">
-                              STEP {t.stepId}: {t.stepTitle}
-                            </span>
-                          </div>
-
-                          {/* Interactive Priority Selector */}
-                          <div className="relative">
-                            <button
-                              type="button"
-                              onClick={() => setPriorityDropdownTaskId(priorityDropdownTaskId === taskKey ? null : taskKey)}
-                              className={`px-2.5 py-1 rounded-xs font-mono text-[9px] uppercase font-bold tracking-wider border flex items-center gap-1.5 cursor-pointer transition-all ${
-                                priorityWeights[t.priority || 'Medium']
-                              }`}
-                              title="Click to adjust priority"
-                            >
-                              <span className={`w-1.5 h-1.5 rounded-full ${t.priority === 'Critical' ? 'bg-rose-400 animate-ping' : t.priority === 'High' ? 'bg-amber-400' : 'bg-sky-400'}`} />
-                              <span>{t.priority || 'MEDIUM'}</span>
-                              <ChevronDown size={10} />
-                            </button>
-
-                            {priorityDropdownTaskId === taskKey && (
-                              <div className="absolute right-0 top-full mt-1 w-32 bg-[#12141c] border border-neutral-700 rounded-sm shadow-xl z-50 p-1 space-y-1">
-                                {(['Critical', 'High', 'Medium', 'Low'] as const).map(p => (
-                                  <button
-                                    key={p}
-                                    type="button"
-                                    onClick={() => {
-                                      handleUpdateTaskPriority(t.projectId, t.stepId, t.id, p);
-                                      setPriorityDropdownTaskId(null);
-                                    }}
-                                    className={`w-full text-left px-2 py-1 rounded-xs font-mono text-[10px] uppercase flex items-center justify-between cursor-pointer ${
-                                      t.priority === p ? 'bg-white text-black font-bold' : 'text-neutral-300 hover:bg-neutral-800'
-                                    }`}
-                                  >
-                                    <span>{p}</span>
-                                    {t.priority === p && <Check size={10} />}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Directive Title */}
-                        <div className="text-sm font-bold text-white uppercase tracking-tight mb-3">
-                          {t.text}
-                        </div>
-
-                        {/* Deadline & SLA Status Banner */}
-                        <div className="mb-3">
-                          {t.isPostponed ? (
-                            <div className="p-2.5 bg-amber-950/30 border border-amber-500/40 rounded-xs font-mono text-xs space-y-1">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <span className="flex items-center gap-1.5 text-amber-400 font-bold uppercase text-[10px]">
-                                  <CalendarClock size={13} /> POSTPONED / RESCHEDULED
-                                </span>
-                                {t.originalDeadline && (
-                                  <span className="line-through text-neutral-500 text-[10px]">
-                                    ORIGINAL: {new Date(t.originalDeadline).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-amber-200 font-bold text-xs">
-                                REVISED DEADLINE: {new Date(t.deadline || t.effectiveDeadline).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                              </div>
-                              {t.postponedReason && (
-                                <div className="text-neutral-300 text-[10px] italic border-t border-amber-500/20 pt-1">
-                                  "{t.postponedReason}"
-                                </div>
-                              )}
-                            </div>
-                          ) : t.isOverdue ? (
-                            <div className="p-2.5 bg-rose-950/40 border border-rose-500/50 rounded-xs font-mono text-xs space-y-1">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <span className="flex items-center gap-1.5 text-rose-400 font-bold uppercase text-[10px] animate-pulse">
-                                  <AlertCircle size={13} /> OVERDUE BY {t.deadlineMs ? formatOverdue(Date.now() - t.deadlineMs) : 'UNKNOWN'} // SLA BREACH
-                                </span>
-                                <span className="text-[10px] text-rose-300 font-semibold">
-                                  SCHEDULED: {new Date(t.effectiveDeadline).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
-                                </span>
-                              </div>
-                              <div className="text-[10px] text-rose-300/90 flex items-center gap-1">
-                                <ShieldAlert size={11} className="shrink-0" />
-                                <span>Escalated to Division Managers & Directors dashboard</span>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="p-2 bg-neutral-900/60 border border-neutral-800 rounded-xs font-mono text-[11px] text-neutral-300 flex items-center justify-between">
-                              <div className="flex items-center gap-1.5">
-                                <Clock size={12} className="text-neutral-400" />
-                                <span>SCHEDULED DEADLINE:</span>
-                                <strong className="text-white">
-                                  {new Date(t.effectiveDeadline).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                </strong>
-                              </div>
-                              <span className="text-[10px] text-neutral-400 uppercase">On Schedule</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Bottom Row: Auto Time-Tracking & Actions */}
-                        <div className="pt-2.5 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 font-mono">
-                          <div className="flex items-center gap-2 text-xs">
-                            <span className="text-neutral-400 text-[10px] uppercase">TIME LOGGED:</span>
-                            <span className="font-bold text-white bg-black/50 px-2 py-0.5 rounded-xs border border-neutral-800">
-                              {t.timeSpent || 0}m
-                            </span>
-                            {isCurrentlyTracking && (
-                              <span className="px-2 py-0.5 rounded-xs bg-emerald-950 border border-emerald-500/50 text-emerald-300 text-[10px] font-bold uppercase flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                                <span>RECORDING {formatTime(elapsedTime)}</span>
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            {/* Start or Pause Live Stopwatch */}
-                            {isCurrentlyTracking ? (
-                              <button
-                                type="button"
-                                onClick={() => handlePauseTaskTracking(t)}
-                                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-black font-black text-[10px] uppercase tracking-wider rounded-sm flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
-                                title="Pause auto tracking and log elapsed minutes"
-                              >
-                                <Pause size={12} fill="currentColor" /> Pause Tracking
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleStartTaskTracking(t)}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-[10px] uppercase tracking-wider rounded-sm flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
-                                title="Start live tracking stopwatch for this directive"
-                              >
-                                <Play size={12} fill="currentColor" /> Start Task / Track Time
-                              </button>
-                            )}
-
-                            {/* Mark Task Finished */}
-                            <button
-                              type="button"
-                              onClick={() => handleFinishTask(t)}
-                              className="px-3 py-1.5 bg-white hover:bg-neutral-200 text-black font-black text-[10px] uppercase tracking-wider rounded-sm flex items-center gap-1.5 cursor-pointer transition-all shadow-sm"
-                              title="Finish task, commit tracked time and update campaign progress"
-                            >
-                              <Check size={12} strokeWidth={3} /> Finish Task
-                            </button>
-
-                            {/* Postpone / Reschedule Button */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPostponeModalTask({
-                                  task: t,
-                                  project: t.project,
-                                  stepId: t.stepId,
-                                  projectName: t.projectName
-                                });
-                                setPostponeNewDate('');
-                                setPostponeReason('');
-                                setPostponeError(null);
-                              }}
-                              className="px-3 py-1.5 bg-[#171922] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700 font-bold text-[10px] uppercase tracking-wider rounded-sm flex items-center gap-1.5 cursor-pointer transition-all"
-                              title="Reschedule directive with a new revised deadline and reason"
-                            >
-                              <CalendarClock size={12} /> Postpone
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          ) : (
-            /* WizeMind AI Strategist Chat Pane */
-            <div className="flex-1 flex flex-col min-h-0 bg-[#0a0b0e]">
-              <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
-                {aiChat.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] p-4 text-xs font-mono leading-relaxed rounded-sm ${
-                      msg.role === 'user' 
-                        ? 'bg-white text-black font-semibold' 
-                        : 'bg-[#12141a] border border-neutral-800 text-neutral-200'
-                    }`}>
-                      {msg.text}
-                    </div>
-                  </div>
-                ))}
-                {isAiTyping && (
-                  <div className="flex gap-2 p-3 bg-[#12141a] border border-neutral-800 w-fit rounded-sm font-mono text-[10px] text-neutral-400">
-                    SYNCHRONIZING REASONING MATRIX...
-                  </div>
-                )}
-                <div ref={aiEndRef} />
-              </div>
-
-              <form onSubmit={handleAiAsk} className="p-4 border-t border-neutral-800 bg-[#0e0f14] flex gap-2">
-                <input 
-                  value={aiInquiry} 
-                  onChange={e => setAiInquiry(e.target.value)} 
-                  placeholder="Query strategic pipeline, client telemetry, or campaign bottlenecks..." 
-                  className="flex-1 bg-[#14151c] border border-neutral-800 px-4 py-2.5 text-xs font-mono text-white outline-none focus:border-white rounded-sm placeholder:text-neutral-500" 
-                />
-                <button 
-                  type="submit" 
-                  className="px-5 py-2.5 bg-white text-black font-black text-xs uppercase tracking-wider hover:bg-neutral-200 rounded-sm transition-colors cursor-pointer"
-                >
-                  <Send size={14} />
-                </button>
-              </form>
-            </div>
-          )}
-        </div>
-
-        {/* Event Horizon */}
-        <div className="bg-[#0a0b0e] border border-neutral-800 rounded-sm p-6 flex flex-col justify-between h-[500px]">
-          <div>
-            <div className="flex items-center justify-between mb-4 border-b border-neutral-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Calendar size={18} className="text-white" />
-                <span className="font-mono text-[10px] text-neutral-400 uppercase tracking-[0.25em]">
-                  EVENT HORIZON
-                </span>
-              </div>
-              <button 
-                onClick={() => setIsNewEventModalOpen(true)}
-                className="w-7 h-7 bg-white text-black hover:bg-neutral-200 flex items-center justify-center rounded-sm text-xs font-bold"
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-
-            <div className="space-y-2.5 overflow-y-auto max-h-[380px] custom-scrollbar pr-1">
-              {events.length === 0 ? (
-                <div className="text-center py-16 opacity-30 font-mono text-[10px] uppercase">
-                  Zero Events Synced
-                </div>
-              ) : (
-                (events || []).slice().sort((a,b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(ev => (
-                  <div key={ev.id} className="p-3 bg-[#101217] border border-neutral-800/80 rounded-sm flex items-start gap-3">
-                    <div className="w-10 h-10 bg-[#161822] border border-neutral-700/60 flex flex-col items-center justify-center shrink-0 rounded-sm font-mono text-white">
-                      <span className="text-xs font-bold leading-none">{new Date(ev.date).getDate()}</span>
-                      <span className="text-[8px] text-neutral-400 uppercase">{new Date(ev.date).toLocaleDateString([], { month: 'short' })}</span>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-bold text-white uppercase truncate">{ev.title}</div>
-                      <div className="font-mono text-[9px] text-neutral-400 uppercase mt-0.5 flex items-center justify-between">
-                        <span>{ev.type}</span>
-                        <span>{new Date(ev.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-neutral-800/80 font-mono text-[9px] text-neutral-400 text-center">
-            {events.length} CALENDAR NODES SYNCHRONIZED
-          </div>
-        </div>
-      </div>
       </>
       )}
 

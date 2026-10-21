@@ -463,8 +463,17 @@ export interface Todo {
   id: string;
   text: string;
   completed: boolean;
-  deadline?: Date;
+  deadline?: Date | string;
   userId?: string;
+  createdById?: string;
+  createdByName?: string;
+  isDaily?: boolean;
+  taggedStaffIds?: string[];
+  taggedStaffNames?: string[];
+  assignedTo?: string;
+  assignedToName?: string;
+  assignedToAvatar?: string;
+  createdAt?: Date | string;
 }
 
 export interface CalendarEvent {

@@ -334,11 +334,50 @@ const App: React.FC = () => {
     setView('detail');
   };
 
+  const handleAddTodoItem = async (text: string, due?: Date, taggedStaffIds?: string[], isDaily: boolean = true) => {
+    if (!text.trim() || !currentUser) return;
+    const taggedStaff = (staffList || []).filter(s => taggedStaffIds?.includes(s.id));
+    const newTodo: Todo = {
+      id: `todo-${Date.now()}`,
+      text: text.trim(),
+      completed: false,
+      userId: currentUser.id,
+      createdById: currentUser.id,
+      createdByName: currentUser.name,
+      isDaily: isDaily,
+      deadline: due ? due.toISOString() : undefined,
+      taggedStaffIds: taggedStaffIds || [],
+      taggedStaffNames: taggedStaff.map(s => s.name),
+      assignedTo: taggedStaffIds?.[0],
+      assignedToName: taggedStaff[0]?.name,
+      assignedToAvatar: taggedStaff[0]?.avatarUrl,
+      createdAt: new Date().toISOString()
+    };
+    await writeData('todos', newTodo.id, newTodo, setTodos, todos);
+
+    // If people are tagged, dispatch notifications
+    if (taggedStaffIds && taggedStaffIds.length > 0) {
+      taggedStaffIds.forEach(staffId => {
+        if (staffId !== currentUser.id) {
+          const notif: Notification = {
+            id: `n-${Date.now()}-${staffId}`,
+            userId: staffId,
+            text: `${currentUser.name} tagged you in a ${isDaily ? 'daily ' : ''}task: "${text.trim()}"`,
+            type: 'mention',
+            read: false,
+            timestamp: new Date(),
+            link: 'dashboard'
+          };
+          writeData('notifications', notif.id, notif, setNotifications, notifications);
+        }
+      });
+    }
+  };
+
   const handleAddTodo = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!quickTodoText.trim() || !currentUser) return;
-    const newTodo = { id: Date.now().toString(), text: quickTodoText, completed: false, userId: currentUser.id };
-    await writeData('todos', newTodo.id, newTodo, setTodos, todos);
+    await handleAddTodoItem(quickTodoText, undefined, [], true);
     setQuickTodoText('');
   };
 
@@ -1130,7 +1169,7 @@ const App: React.FC = () => {
               currentUser={currentUser} 
               todos={todos} 
               onToggleTodo={handleToggleTodo} 
-              onAddTodo={() => {}} 
+              onAddTodo={handleAddTodoItem} 
               staffList={staffList} 
               events={events} 
               onAddEvent={(ev) => writeData('events', ev.id, ev, setEvents, events)} 
