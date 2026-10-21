@@ -274,7 +274,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     let list = [...currentUserTasks];
 
     if (directiveFilter === 'TRACKING') {
-      list = list.filter(t => activeTimerTask?.taskId === t.id);
+      list = list.filter(t => activeTimerTask?.taskId === t.id && (!activeTimerTask?.projectId || activeTimerTask?.projectId === t.projectId));
     } else if (directiveFilter === 'CRITICAL') {
       list = list.filter(t => t.priority === 'Critical' || t.priority === 'High');
     } else if (directiveFilter === 'OVERDUE') {
@@ -823,7 +823,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {overdueDirectives.map((item, idx) => {
                   return (
-                    <div key={idx} className="p-4 bg-[#0e0a0b] border border-rose-900/60 rounded-sm flex flex-col justify-between space-y-3">
+                    <div key={`${item.projectId}-${item.stepId}-${item.task.id}-${idx}`} className="p-4 bg-[#0e0a0b] border border-rose-900/60 rounded-sm flex flex-col justify-between space-y-3">
                       <div>
                         <div className="flex items-start justify-between gap-2 mb-2">
                           <div className="flex items-center gap-2 min-w-0">
@@ -1302,7 +1302,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <div className="flex flex-wrap items-center gap-1.5">
                   {(['ALL', 'TRACKING', 'CRITICAL', 'OVERDUE', 'POSTPONED'] as const).map(f => {
                     const count = f === 'ALL' ? currentUserTasks.length
-                      : f === 'TRACKING' ? currentUserTasks.filter(t => activeTimerTask?.taskId === t.id).length
+                      : f === 'TRACKING' ? currentUserTasks.filter(t => activeTimerTask?.taskId === t.id && (!activeTimerTask?.projectId || activeTimerTask?.projectId === t.projectId)).length
                       : f === 'CRITICAL' ? currentUserTasks.filter(t => t.priority === 'Critical' || t.priority === 'High').length
                       : f === 'OVERDUE' ? currentUserTasks.filter(t => t.isOverdue).length
                       : currentUserTasks.filter(t => t.isPostponed).length;
@@ -1354,8 +1354,9 @@ const Dashboard: React.FC<DashboardProps> = ({
                     <span>ALL ACTIVE DIRECTIVES COMPLETED // SYSTEM NOMINAL</span>
                   </div>
                 ) : (
-                  filteredAndSortedDirectives.map((t) => {
-                    const isCurrentlyTracking = activeTimerTask?.taskId === t.id;
+                  filteredAndSortedDirectives.map((t, idx) => {
+                    const isCurrentlyTracking = activeTimerTask?.taskId === t.id && (!activeTimerTask?.projectId || activeTimerTask?.projectId === t.projectId);
+                    const taskKey = `${t.projectId || 'p'}-${t.stepId || 's'}-${t.id}`;
                     const priorityWeights: Record<string, string> = {
                       Critical: 'bg-rose-950 text-rose-300 border-rose-500/60 shadow-[0_0_10px_rgba(244,63,94,0.3)]',
                       High: 'bg-amber-950 text-amber-300 border-amber-500/60',
@@ -1365,7 +1366,8 @@ const Dashboard: React.FC<DashboardProps> = ({
 
                     return (
                       <div
-                        key={t.id}
+                        key={`${taskKey}-${idx}`}
+                        style={{ zIndex: priorityDropdownTaskId === taskKey ? 50 : Math.max(1, 40 - idx) }}
                         className={`p-4 rounded-sm border transition-all duration-200 relative ${
                           t.isOverdue 
                             ? 'bg-[#160c0e] border-rose-600/50 shadow-[0_0_15px_-3px_rgba(244,63,94,0.2)]'
@@ -1391,7 +1393,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                           <div className="relative">
                             <button
                               type="button"
-                              onClick={() => setPriorityDropdownTaskId(priorityDropdownTaskId === t.id ? null : t.id)}
+                              onClick={() => setPriorityDropdownTaskId(priorityDropdownTaskId === taskKey ? null : taskKey)}
                               className={`px-2.5 py-1 rounded-xs font-mono text-[9px] uppercase font-bold tracking-wider border flex items-center gap-1.5 cursor-pointer transition-all ${
                                 priorityWeights[t.priority || 'Medium']
                               }`}
@@ -1402,13 +1404,16 @@ const Dashboard: React.FC<DashboardProps> = ({
                               <ChevronDown size={10} />
                             </button>
 
-                            {priorityDropdownTaskId === t.id && (
+                            {priorityDropdownTaskId === taskKey && (
                               <div className="absolute right-0 top-full mt-1 w-32 bg-[#12141c] border border-neutral-700 rounded-sm shadow-xl z-50 p-1 space-y-1">
                                 {(['Critical', 'High', 'Medium', 'Low'] as const).map(p => (
                                   <button
                                     key={p}
                                     type="button"
-                                    onClick={() => handleUpdateTaskPriority(t.projectId, t.stepId, t.id, p)}
+                                    onClick={() => {
+                                      handleUpdateTaskPriority(t.projectId, t.stepId, t.id, p);
+                                      setPriorityDropdownTaskId(null);
+                                    }}
                                     className={`w-full text-left px-2 py-1 rounded-xs font-mono text-[10px] uppercase flex items-center justify-between cursor-pointer ${
                                       t.priority === p ? 'bg-white text-black font-bold' : 'text-neutral-300 hover:bg-neutral-800'
                                     }`}
@@ -1747,7 +1752,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               <div className="space-y-2 pt-2">
                 <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-wider">Active Job Assignments:</div>
                 {selectedStaffData.projectTasks.map((t: any, idx) => (
-                  <div key={idx} onClick={() => handleTaskJump(t.projectId)} className="p-3 bg-[#12141a] border border-neutral-800/80 hover:border-white rounded-sm cursor-pointer transition-colors flex items-center justify-between">
+                  <div key={`${t.projectId || 'p'}-${t.id || idx}-${idx}`} onClick={() => handleTaskJump(t.projectId)} className="p-3 bg-[#12141a] border border-neutral-800/80 hover:border-white rounded-sm cursor-pointer transition-colors flex items-center justify-between">
                     <div>
                       <div className="font-mono text-[9px] text-neutral-400 uppercase">{t.projectName} ({t.jobNumber})</div>
                       <div className="text-xs font-semibold text-white mt-0.5">{t.text}</div>
@@ -1777,7 +1782,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <div className="text-center py-16 opacity-30 font-mono text-xs uppercase">All Directives Completed</div>
               ) : (
                 currentUserTasks.map((t: any, idx) => (
-                  <div key={idx} onClick={() => t.projectId && handleTaskJump(t.projectId)} className="p-4 bg-[#12141a] border border-neutral-800 hover:border-white rounded-sm cursor-pointer transition-colors flex items-center justify-between">
+                  <div key={`${t.projectId || 'p'}-${t.stepId || 's'}-${t.id || idx}-${idx}`} onClick={() => t.projectId && handleTaskJump(t.projectId)} className="p-4 bg-[#12141a] border border-neutral-800 hover:border-white rounded-sm cursor-pointer transition-colors flex items-center justify-between">
                     <div>
                       <div className="font-mono text-[9px] text-neutral-400 uppercase">{t.projectName} // {t.jobNumber}</div>
                       <div className="text-xs font-semibold text-white mt-0.5">{t.text}</div>

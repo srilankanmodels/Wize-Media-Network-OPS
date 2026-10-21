@@ -933,35 +933,6 @@ const App: React.FC = () => {
                 <div className="text-neutral-400">NODE: COLOMBO 07</div>
               </div>
 
-              {/* High Contrast JARVIS Liquid Glass Action Button */}
-              {canCreateCampaign && (
-                <button
-                  onClick={() => {
-                    setIsNewProjectModalOpen(true);
-                    playJarvisSound('deploy', !jarvisTheme.audioFeedback);
-                  }}
-                  className="jarvis-btn-primary px-4 py-2 font-black text-xs uppercase tracking-wider flex items-center gap-1.5 rounded-sm transition-all shadow-md active:scale-95 shrink-0 cursor-pointer"
-                  title="Initialize New Campaign Node"
-                >
-                  <Plus size={14} strokeWidth={3} /> NEW CAMPAIGN
-                </button>
-              )}
-
-              {/* JARVIS Settings & Optics Button - Restricted to Super Admin and Admin */}
-              {canAccessSettings && (
-                <button
-                  onClick={() => {
-                    setIsSettingsOpen(true);
-                    playJarvisSound('sonar', !jarvisTheme.audioFeedback);
-                  }}
-                  className="h-9 px-3 border border-[var(--jarvis-border)] bg-[rgba(var(--jarvis-primary-rgb),0.12)] hover:bg-[rgba(var(--jarvis-primary-rgb),0.24)] hover:border-[var(--jarvis-primary)] text-white rounded-sm flex items-center gap-1.5 transition-all shadow-[0_0_12px_rgba(var(--jarvis-primary-rgb),0.25)] cursor-pointer group"
-                  title="JARVIS Holographic Theme, Optics & Color Customizer (Admin / Super Admin)"
-                >
-                  <Sliders size={15} className="text-[var(--jarvis-primary)] group-hover:rotate-45 transition-transform duration-300" />
-                  <span className="hidden lg:inline font-mono text-[10px] uppercase font-bold tracking-wider text-[var(--jarvis-primary)]">SETTINGS</span>
-                </button>
-              )}
-
               {/* Hub Icon */}
               <button
                 onClick={handleOpenHub}

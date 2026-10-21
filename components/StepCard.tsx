@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Step, Task, Role, StaffMember } from '../types';
 import { CheckCircle2, Circle, Play, Clock, FileText, User, ChevronDown, ChevronUp, Calendar, MessageSquare, X, Check, Timer, UserMinus, AlertCircle, Pause, StickyNote, Save, Settings, Trash2, Plus, Pencil, ArrowUpRight } from 'lucide-react';
 
@@ -99,6 +99,7 @@ const ModernDateTimePicker: React.FC<{
 // --- Task Item Component ---
 const TaskItem: React.FC<{
   task: Task;
+  taskIndex?: number;
   isCompleted: boolean;
   onToggle: () => void;
   staffList: StaffMember[];
@@ -107,11 +108,23 @@ const TaskItem: React.FC<{
   onDelete: () => void;
   onToggleTimer: () => void;
   activeTimerTaskId?: string;
-}> = ({ task, isCompleted, onToggle, staffList, onAssign, onUpdate, onDelete, onToggleTimer, activeTimerTaskId }) => {
+}> = ({ task, taskIndex = 0, isCompleted, onToggle, staffList, onAssign, onUpdate, onDelete, onToggleTimer, activeTimerTaskId }) => {
   const [showAssignMenu, setShowAssignMenu] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [tempNotes, setTempNotes] = useState(task.notes || '');
+  const assignMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showAssignMenu) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (assignMenuRef.current && !assignMenuRef.current.contains(event.target as Node)) {
+        setShowAssignMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showAssignMenu]);
   
   const [editData, setEditData] = useState({
     text: task.text,
@@ -174,9 +187,12 @@ const TaskItem: React.FC<{
   }
 
   return (
-    <div className={`p-4 rounded-sm border transition-all ${
-      isCompleted ? 'bg-[#0e0f14]/80 border-neutral-800/60 opacity-60' : 'bg-[#12141a] border-neutral-800 hover:border-neutral-700'
-    }`}>
+    <div 
+      style={{ zIndex: showAssignMenu ? 60 : Math.max(1, 30 - (taskIndex || 0)) }}
+      className={`p-4 rounded-sm border transition-all relative ${
+        isCompleted && !showAssignMenu ? 'bg-[#0e0f14]/80 border-neutral-800/60 opacity-60' : 'bg-[#12141a] border-neutral-800 hover:border-neutral-700'
+      }`}
+    >
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         {/* Left: Check & Name */}
         <div className="flex items-center gap-3.5 flex-1 min-w-0">
@@ -214,10 +230,11 @@ const TaskItem: React.FC<{
           </button>
 
           {/* Assignee button */}
-          <div className="relative">
+          <div ref={assignMenuRef} className={`relative ${showAssignMenu ? 'z-50' : 'z-auto'}`}>
             <button 
+              type="button"
               onClick={() => setShowAssignMenu(!showAssignMenu)}
-              className="flex items-center gap-2 px-2.5 py-1 bg-[#0c0d12] border border-neutral-800 rounded-sm text-[10px] text-neutral-300 hover:text-white hover:border-neutral-700 transition-colors"
+              className="flex items-center gap-2 px-2.5 py-1 bg-[#0c0d12] border border-neutral-800 rounded-sm text-[10px] text-neutral-300 hover:text-white hover:border-neutral-700 transition-colors cursor-pointer"
             >
               {assignedStaff ? (
                 <div className="flex items-center gap-1.5">
@@ -227,18 +244,23 @@ const TaskItem: React.FC<{
               ) : (
                 <span className="text-neutral-500 uppercase text-[9px]">Assign</span>
               )}
-              <ChevronDown size={11} className="text-neutral-500" />
+              <ChevronDown size={11} className={`text-neutral-500 transition-transform ${showAssignMenu ? 'rotate-180' : ''}`} />
             </button>
 
             {showAssignMenu && (
-              <div className="absolute right-0 top-full mt-2 w-64 bg-[#0c0d12] border border-neutral-800 rounded-sm shadow-2xl z-[100] p-2 space-y-1 font-mono text-xs" onClick={e => e.stopPropagation()}>
-                <div className="text-[9px] uppercase tracking-widest text-neutral-500 px-2 py-1">Assign Specialist</div>
-                <div className="max-h-56 overflow-y-auto custom-scrollbar space-y-1">
+              <div 
+                className="absolute right-0 top-full mt-2 w-64 bg-[#0e1017] border border-neutral-700 rounded-sm shadow-[0_20px_40px_rgba(0,0,0,0.9),0_0_20px_rgba(0,0,0,0.8)] z-[100] p-2 space-y-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100" 
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="text-[9px] uppercase tracking-widest text-neutral-400 px-2 py-1 font-bold border-b border-neutral-800/80 pb-1.5">
+                  Assign Specialist
+                </div>
+                <div className="max-h-56 overflow-y-auto custom-scrollbar space-y-1 pt-1">
                   {staffList.map(s => (
                     <button
                       key={s.id}
                       onClick={() => { onAssign(s.id); setShowAssignMenu(false); }}
-                      className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-sm text-left transition-colors ${
+                      className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-sm text-left transition-colors cursor-pointer ${
                         task.assignedTo === s.id ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-[#181a24] hover:text-white'
                       }`}
                     >
@@ -250,7 +272,7 @@ const TaskItem: React.FC<{
                     </button>
                   ))}
                   {task.assignedTo && (
-                    <button onClick={() => { onAssign(''); setShowAssignMenu(false); }} className="w-full text-left px-2 py-1.5 text-[9px] text-rose-400 hover:bg-rose-950/20 uppercase">
+                    <button onClick={() => { onAssign(''); setShowAssignMenu(false); }} className="w-full text-left px-2 py-1.5 text-[9px] text-rose-400 hover:bg-rose-950/20 uppercase cursor-pointer">
                       Remove Assignee
                     </button>
                   )}
@@ -337,9 +359,12 @@ const StepCard: React.FC<StepCardProps> = ({
   };
 
   return (
-    <div className={`bg-[#0a0b0e] border rounded-sm transition-all ${
-      isActive ? 'border-white/60 shadow-lg' : 'border-neutral-800 hover:border-neutral-700'
-    }`}>
+    <div 
+      style={{ zIndex: isExpanded ? Math.max(1, 25 - step.id) : 1 }}
+      className={`bg-[#0a0b0e] border rounded-sm transition-all relative ${
+        isActive ? 'border-white/60 shadow-lg' : 'border-neutral-800 hover:border-neutral-700'
+      }`}
+    >
       {/* Header Row */}
       <div 
         onClick={() => !isEditingStep && setIsExpanded(!isExpanded)}
@@ -441,10 +466,11 @@ const StepCard: React.FC<StepCardProps> = ({
       {/* Expanded Tasks List */}
       {isExpanded && (
         <div className="p-6 border-t border-neutral-800 bg-[#07080a] space-y-3">
-          {step.tasks.map(task => (
+          {step.tasks.map((task, taskIdx) => (
             <TaskItem 
               key={task.id} 
               task={task} 
+              taskIndex={taskIdx}
               isCompleted={!!completedTasks[task.id]} 
               onToggle={() => onToggleTask(task.id)} 
               staffList={staffList} 
