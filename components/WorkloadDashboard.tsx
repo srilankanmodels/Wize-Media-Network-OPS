@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Project, StaffMember, Role, Task } from '../types';
+import { formatHrsMM } from '../utils/emailDispatcher';
 import { 
   Users, Target, Search, Filter, CheckCircle2, Clock, 
   AlertCircle, ArrowRight, RefreshCw, Briefcase, ChevronRight, 
@@ -55,12 +56,13 @@ const WorkloadDashboard: React.FC<WorkloadDashboardProps> = ({
   const isAE = normRole === 'account executive' || currentUser.role === Role.AE;
   const hasAccess = isSuperAdmin || isAdmin || isGM || isManager || isAE || !!currentUser.permissions?.canViewWorkload;
 
-  // Flatten all tasks across all projects with project context
+  // Flatten all tasks across all projects with project context (including sub-steps)
   const allProjectTasks = useMemo(() => {
     const list: EnrichedTask[] = [];
     (projects || []).forEach(project => {
       (project.steps || []).forEach(step => {
-        (step.tasks || []).forEach(task => {
+        const stepTasks = [...(step.tasks || []), ...(step.subSteps?.flatMap(ss => ss.tasks) || [])];
+        stepTasks.forEach(task => {
           const isTaskCompleted = !!(project.tasksCompleted && project.tasksCompleted[task.id]) || task.completed;
           list.push({
             ...task,
@@ -572,7 +574,7 @@ const WorkloadDashboard: React.FC<WorkloadDashboardProps> = ({
                             
                             <div className="font-mono text-[9px] text-neutral-400 mt-1 flex items-center justify-between">
                               <span className="truncate max-w-[180px]">Client: {task.projectClient}</span>
-                              <span>{task.timeAllocated || 60}m est.</span>
+                              <span className="text-amber-300 font-bold">EST {formatHrsMM(task.timeAllocated)} Hrs</span>
                             </div>
                           </div>
 

@@ -323,7 +323,26 @@ export const INITIAL_PROJECTS: Project[] = (() => {
         }
       ],
       quotations: [],
-      documents: [],
+      documents: [
+        {
+          id: 'doc-p1-1',
+          name: 'Annual_Report_Strategic_Scope_Brief.pdf',
+          type: 'application/pdf',
+          url: '#',
+          uploadedBy: 'Sarah Admin',
+          uploadDate: new Date(now - 86400000 * 5),
+          size: '1.4 MB'
+        },
+        {
+          id: 'doc-p1-2',
+          name: 'Quotation_MW-Q-2024-1042.pdf',
+          type: 'application/pdf',
+          url: '#',
+          uploadedBy: 'Account Exec Jane',
+          uploadDate: new Date(now - 86400000 * 3),
+          size: '1.8 MB'
+        }
+      ],
       channelId: 'ch-p1',
       advanceReceived: true,
       advanceAmount: 150000,
@@ -364,7 +383,17 @@ export const INITIAL_PROJECTS: Project[] = (() => {
         }
       ],
       quotations: [],
-      documents: [],
+      documents: [
+        {
+          id: 'doc-p2-1',
+          name: 'Q2_Digital_Push_Media_Plan.pdf',
+          type: 'application/pdf',
+          url: '#',
+          uploadedBy: 'Account Exec Jane',
+          uploadDate: new Date(now - 86400000 * 2),
+          size: '2.4 MB'
+        }
+      ],
       channelId: 'ch-p2',
       advanceReceived: false,
       createdBy: 's5',

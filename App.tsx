@@ -35,7 +35,8 @@ import {
   sendTaskMentionEmail, 
   sendTaskAssignmentEmail, 
   getStoredDailyReportConfig, 
-  dispatchDailyReport 
+  dispatchDailyReport,
+  checkAndDispatchOverdueEscalations
 } from './utils/emailDispatcher';
 
 type ViewState = 'dashboard' | 'detail' | 'staff' | 'clients' | 'finance' | 'hr' | 'registry' | 'notes' | 'procedures' | 'calendar' | 'access' | 'workload';
@@ -308,6 +309,22 @@ const App: React.FC = () => {
         mainScrollRef.current.scrollTop = 0;
     }
   }, [view, activeProjectId]);
+
+  // Automated SLA Breach Escalation Protocol:
+  // Every task that is assigned automatically triggers an email notification to Manager, GM, Director, and Admin if deadlines are not met
+  useEffect(() => {
+    if (!projects || projects.length === 0 || !staffList || staffList.length === 0) return;
+
+    const runEscalationCheck = () => {
+      checkAndDispatchOverdueEscalations(projects, staffList).catch(err => 
+        console.debug('Automated SLA breach check notice:', err)
+      );
+    };
+
+    runEscalationCheck();
+    const interval = setInterval(runEscalationCheck, 60000); // Verify on 60-second cycle
+    return () => clearInterval(interval);
+  }, [projects, staffList]);
 
   const activeProject = useMemo(() => projects.find(p => p.id === activeProjectId) || null, [projects, activeProjectId]);
   const filteredBriefs = useMemo(() => {
@@ -1451,6 +1468,8 @@ const App: React.FC = () => {
               todos={todos} 
               onToggleTodo={handleToggleTodo} 
               onAddTodo={handleAddTodoItem} 
+              onUpdateTodo={(todo) => writeData('todos', todo.id, todo, setTodos, todos)}
+              onDeleteTodo={(id) => deleteData('todos', id, setTodos, todos)}
               staffList={staffList} 
               events={events} 
               onAddEvent={(ev) => writeData('events', ev.id, ev, setEvents, events)} 

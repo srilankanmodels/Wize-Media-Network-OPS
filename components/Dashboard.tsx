@@ -6,7 +6,7 @@ import {
   Search, Send, Timer, Play, Pause, ChevronRight, LayoutGrid, Layers, Hash, 
   StopCircle, Check, Gauge, Award, Eye, ExternalLink, ShieldCheck, ArrowUpRight,
   Mail, ShieldAlert, CheckCircle, ChevronDown, HardDrive, Lock, UserCheck,
-  Bell, AlertTriangle, CalendarClock, History, Sparkles, RotateCcw
+  Bell, AlertTriangle, CalendarClock, History, Sparkles, RotateCcw, Trash2
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import GameHub from './GameHub';
@@ -18,7 +18,9 @@ import {
   getLatestDailyReport, 
   getStoredDailyReportConfig, 
   compileDailyReportData, 
-  dispatchDailyReport 
+  dispatchDailyReport,
+  formatHrsMM,
+  checkAndDispatchOverdueEscalations
 } from '../utils/emailDispatcher';
 import { DailyCompiledReport, DailyReportConfig } from '../types';
 
@@ -30,6 +32,8 @@ interface DashboardProps {
   todos: Todo[];
   onToggleTodo: (id: string) => void;
   onAddTodo: (text: string, due?: Date, taggedStaffIds?: string[], isDaily?: boolean) => void;
+  onUpdateTodo?: (todo: Todo) => void;
+  onDeleteTodo?: (id: string) => void;
   events: CalendarEvent[];
   onAddEvent: (event: CalendarEvent) => void;
   onUpdateEvent?: (event: CalendarEvent) => void;
@@ -49,7 +53,7 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ 
   projects, onSelectProject, onNewProject, currentUser, todos, onToggleTodo, 
-  onAddTodo, onUpdatePayment, pettyCash, clientList, staffList, events, 
+  onAddTodo, onUpdateTodo, onDeleteTodo, onUpdatePayment, pettyCash, clientList, staffList, events, 
   onAddEvent, onUpdateEvent, onDeleteEvent, onSendMessage, leaveRequests = [], onUpdateLeave, onNavigateToHR,
   onNavigateToWorkload, onUpdateProject, onOpenDailyReportSettings
 }) => {
@@ -93,6 +97,11 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [directiveFilter, setDirectiveFilter] = useState<'DAILY' | 'ALL' | 'CRITICAL' | 'OVERDUE' | 'PERSONAL' | 'TRACKING' | 'POSTPONED'>('DAILY');
   const [directiveSort, setDirectiveSort] = useState<'DEADLINE' | 'PRIORITY' | 'PROJECT'>('DEADLINE');
   const [newQuickTodo, setNewQuickTodo] = useState('');
+  const [quickTodoDeadline, setQuickTodoDeadline] = useState('');
+  const [isDeadlineDropdownOpen, setIsDeadlineDropdownOpen] = useState(false);
+  const deadlineDropdownRef = useRef<HTMLDivElement>(null);
+  const [editingDeadlineTodo, setEditingDeadlineTodo] = useState<Todo | null>(null);
+  const [editTodoDeadlineValue, setEditTodoDeadlineValue] = useState('');
   const [selectedTaggedStaffIds, setSelectedTaggedStaffIds] = useState<string[]>([]);
   const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
   const [isDailyQuickTask, setIsDailyQuickTask] = useState(true);
@@ -103,6 +112,32 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [postponeError, setPostponeError] = useState<string | null>(null);
   const [priorityDropdownTaskId, setPriorityDropdownTaskId] = useState<string | null>(null);
   const [activeConsoleTab, setActiveConsoleTab] = useState<'directives' | 'ai'>('directives');
+
+  // Quick Deadline Presets helper
+  const getQuickDeadlinePreset = (type: 'today_eod' | 'tonight' | 'tomorrow_noon' | 'tomorrow_eod' | 'in_3_days' | 'end_of_week') => {
+    const d = new Date();
+    if (type === 'today_eod') {
+      d.setHours(18, 0, 0, 0);
+    } else if (type === 'tonight') {
+      d.setHours(21, 0, 0, 0);
+    } else if (type === 'tomorrow_noon') {
+      d.setDate(d.getDate() + 1);
+      d.setHours(12, 0, 0, 0);
+    } else if (type === 'tomorrow_eod') {
+      d.setDate(d.getDate() + 1);
+      d.setHours(18, 0, 0, 0);
+    } else if (type === 'in_3_days') {
+      d.setDate(d.getDate() + 3);
+      d.setHours(18, 0, 0, 0);
+    } else if (type === 'end_of_week') {
+      const currentDay = d.getDay();
+      const daysUntilFriday = (5 - currentDay + 7) % 7 || 7;
+      d.setDate(d.getDate() + daysUntilFriday);
+      d.setHours(18, 0, 0, 0);
+    }
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
 
   // Daily EOD Report state
   const [dailyReportConfig, setDailyReportConfig] = useState<DailyReportConfig>(() => getStoredDailyReportConfig());
@@ -142,13 +177,16 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   useEffect(() => {
-    const handleClickOutsideTag = (e: MouseEvent) => {
+    const handleClickOutside = (e: MouseEvent) => {
       if (tagDropdownRef.current && !tagDropdownRef.current.contains(e.target as Node)) {
         setIsTagDropdownOpen(false);
       }
+      if (deadlineDropdownRef.current && !deadlineDropdownRef.current.contains(e.target as Node)) {
+        setIsDeadlineDropdownOpen(false);
+      }
     };
-    document.addEventListener('mousedown', handleClickOutsideTag);
-    return () => document.removeEventListener('mousedown', handleClickOutsideTag);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   useEffect(() => {
@@ -253,17 +291,18 @@ const Dashboard: React.FC<DashboardProps> = ({
   const teamStats = useMemo(() => (staffList || []).map(staff => {
     const staffTodos = (todos || []).filter(t => t.userId === staff.id);
     const allStaffTasks = (projects || []).flatMap(p => 
-      (p.steps || []).flatMap(step => 
-        (step.tasks || []).filter(t => t.assignedTo === staff.id)
+      (p.steps || []).flatMap(step => {
+        const stepTasks = [...(step.tasks || []), ...(step.subSteps?.flatMap(ss => ss.tasks) || [])];
+        return stepTasks.filter(t => t.assignedTo === staff.id)
           .map(task => ({ 
             ...task, 
             projectName: p.projectName, 
             clientName: p.clientName, 
             jobNumber: p.jobNumber,
             projectId: p.id,
-            isCompleted: !!(p.tasksCompleted && p.tasksCompleted[task.id])
-          }))
-      )
+            isCompleted: !!(p.tasksCompleted && p.tasksCompleted[task.id]) || !!task.completed
+          }));
+      })
     );
 
     const activeTasks = allStaffTasks.filter(t => !t.isCompleted);
@@ -300,12 +339,21 @@ const Dashboard: React.FC<DashboardProps> = ({
   const currentUserTasks = useMemo(() => {
     const now = Date.now();
     return (projects || []).flatMap(p => 
-      (p.steps || []).flatMap(s => 
-        (s.tasks || []).filter(t => {
-          const isAssignedToMe = t.assignedTo === currentUser.id || t.role === currentUser.role || ((isAdmin || isSuperAdmin || isGM) && (t.assignedTo === currentUser.id || !t.assignedTo || t.role === currentUser.role || t.role === Role.MANAGEMENT));
+      (p.steps || []).flatMap(s => {
+        // Traverse both step tasks and sub-step tasks
+        const allStepTasks = [...(s.tasks || []), ...(s.subSteps?.flatMap(ss => ss.tasks) || [])];
+        return allStepTasks.filter(t => {
+          // Rule: Any task assigned to a person must reflect in that relevant person's task list
+          // If assigned directly: only the assignee sees it in their assigned directives
+          // If unassigned: role specialists and leadership see it in the unassigned queue
+          const isAssignedToMe = t.assignedTo 
+            ? t.assignedTo === currentUser.id 
+            : (t.role === currentUser.role || ((isAdmin || isSuperAdmin || isGM) && (t.role === currentUser.role || t.role === Role.MANAGEMENT)));
+
           const isDone = !!(p.tasksCompleted && p.tasksCompleted[t.id]) || !!t.completed;
           return isAssignedToMe && !isDone;
         }).map(t => {
+          // Task's own deadline takes highest precedence, followed by step deadline and project due date
           const effectiveDeadline = t.deadline || s.deadline || p.dueDate;
           const deadlineMs = effectiveDeadline ? new Date(effectiveDeadline).getTime() : null;
           const isOverdue = deadlineMs ? deadlineMs < now : false;
@@ -327,8 +375,8 @@ const Dashboard: React.FC<DashboardProps> = ({
             priority,
             project: p
           };
-        })
-      )
+        });
+      })
     );
   }, [projects, currentUser, isAdmin, isSuperAdmin, isGM]);
 
@@ -369,10 +417,13 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const handleAddQuickTodo = () => {
     if (!newQuickTodo.trim()) return;
-    onAddTodo(newQuickTodo.trim(), undefined, selectedTaggedStaffIds, isDailyQuickTask);
+    const due = quickTodoDeadline ? new Date(quickTodoDeadline) : undefined;
+    onAddTodo(newQuickTodo.trim(), due, selectedTaggedStaffIds, isDailyQuickTask);
     setNewQuickTodo('');
+    setQuickTodoDeadline('');
     setSelectedTaggedStaffIds([]);
     setIsTagDropdownOpen(false);
+    setIsDeadlineDropdownOpen(false);
   };
 
   const filteredAndSortedDirectives = useMemo(() => {
@@ -1168,6 +1219,154 @@ const Dashboard: React.FC<DashboardProps> = ({
                         )}
                       </div>
 
+                      {/* Deadline Selector Button & Popover */}
+                      <div className="relative" ref={deadlineDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsDeadlineDropdownOpen(!isDeadlineDropdownOpen)}
+                          className={`px-2.5 py-1.5 rounded-xs font-mono text-[10px] uppercase font-bold tracking-wider transition-all cursor-pointer flex items-center gap-1.5 border ${
+                            quickTodoDeadline
+                              ? 'bg-amber-400/20 text-amber-300 border-amber-400/60 shadow-[0_0_12px_rgba(251,191,36,0.3)]'
+                              : 'bg-[#12141a] text-neutral-300 border-neutral-700 hover:border-neutral-500'
+                          }`}
+                          title="Set task deadline"
+                        >
+                          <CalendarClock size={12} className={quickTodoDeadline ? "text-amber-400" : "text-neutral-400"} />
+                          <span>
+                            {quickTodoDeadline 
+                              ? `Due: ${new Date(quickTodoDeadline).toLocaleDateString([], { month: 'short', day: 'numeric' })} ${new Date(quickTodoDeadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                              : 'Set Deadline'}
+                          </span>
+                          {quickTodoDeadline ? (
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setQuickTodoDeadline('');
+                              }}
+                              className="text-neutral-400 hover:text-rose-400 p-0.5 rounded-xs cursor-pointer ml-0.5"
+                              title="Clear deadline"
+                            >
+                              <X size={10} />
+                            </span>
+                          ) : (
+                            <ChevronDown size={11} className={isDeadlineDropdownOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                          )}
+                        </button>
+
+                        {/* Deadline Dropdown Popover */}
+                        {isDeadlineDropdownOpen && (
+                          <div className="absolute right-0 top-full mt-2 w-72 bg-[#101218] border border-neutral-700 rounded-sm shadow-2xl z-[130] p-3 space-y-3 animate-in fade-in zoom-in-95 duration-150 font-mono text-white">
+                            <div className="flex items-center justify-between pb-1.5 border-b border-neutral-800">
+                              <span className="text-[10px] text-amber-400 uppercase tracking-wider font-bold flex items-center gap-1.5">
+                                <CalendarClock size={13} />
+                                Set Task Deadline
+                              </span>
+                              {quickTodoDeadline && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setQuickTodoDeadline('');
+                                    setIsDeadlineDropdownOpen(false);
+                                  }}
+                                  className="text-[9px] text-rose-400 hover:underline uppercase cursor-pointer"
+                                >
+                                  Clear
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Preset Buttons */}
+                            <div className="space-y-1">
+                              <div className="text-[9px] text-neutral-400 uppercase tracking-wider mb-1">
+                                Quick Presets:
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setQuickTodoDeadline(getQuickDeadlinePreset('today_eod'));
+                                    setIsDeadlineDropdownOpen(false);
+                                  }}
+                                  className="p-1.5 bg-[#171922] hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 rounded-xs text-[10px] text-left transition-colors cursor-pointer"
+                                >
+                                  Today 18:00 (EOD)
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setQuickTodoDeadline(getQuickDeadlinePreset('tonight'));
+                                    setIsDeadlineDropdownOpen(false);
+                                  }}
+                                  className="p-1.5 bg-[#171922] hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 rounded-xs text-[10px] text-left transition-colors cursor-pointer"
+                                >
+                                  Tonight 21:00
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setQuickTodoDeadline(getQuickDeadlinePreset('tomorrow_eod'));
+                                    setIsDeadlineDropdownOpen(false);
+                                  }}
+                                  className="p-1.5 bg-[#171922] hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 rounded-xs text-[10px] text-left transition-colors cursor-pointer"
+                                >
+                                  Tomorrow 18:00
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setQuickTodoDeadline(getQuickDeadlinePreset('in_3_days'));
+                                    setIsDeadlineDropdownOpen(false);
+                                  }}
+                                  className="p-1.5 bg-[#171922] hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 rounded-xs text-[10px] text-left transition-colors cursor-pointer"
+                                >
+                                  In 3 Days (18:00)
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setQuickTodoDeadline(getQuickDeadlinePreset('end_of_week'));
+                                    setIsDeadlineDropdownOpen(false);
+                                  }}
+                                  className="col-span-2 p-1.5 bg-[#171922] hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 rounded-xs text-[10px] text-left transition-colors cursor-pointer text-amber-300"
+                                >
+                                  End of Week (Friday 18:00)
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Custom Date & Time Picker */}
+                            <div className="pt-2 border-t border-neutral-800 space-y-1.5">
+                              <label className="block text-[9px] text-neutral-400 uppercase tracking-wider">
+                                Custom Target Date & Time:
+                              </label>
+                              <input
+                                type="datetime-local"
+                                value={quickTodoDeadline}
+                                onChange={(e) => setQuickTodoDeadline(e.target.value)}
+                                className="w-full bg-[#181a24] border border-neutral-700 focus:border-amber-400 px-2.5 py-1.5 text-xs text-white rounded-xs outline-none cursor-pointer [color-scheme:dark]"
+                              />
+                            </div>
+
+                            <div className="flex justify-end gap-2 pt-1 border-t border-neutral-800">
+                              <button
+                                type="button"
+                                onClick={() => setIsDeadlineDropdownOpen(false)}
+                                className="px-2.5 py-1 text-[10px] text-neutral-400 hover:text-white uppercase cursor-pointer"
+                              >
+                                Close
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setIsDeadlineDropdownOpen(false)}
+                                className="px-3 py-1 bg-white hover:bg-neutral-200 text-black font-black text-[10px] uppercase rounded-xs transition-colors cursor-pointer"
+                              >
+                                Apply
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Add Button */}
                       <button
                         type="button"
@@ -1179,28 +1378,47 @@ const Dashboard: React.FC<DashboardProps> = ({
                       </button>
                     </div>
 
-                    {/* Tagged Staff Chips row */}
-                    {selectedTaggedStaffIds.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-neutral-800/60 font-mono text-[10px]">
-                        <span className="text-neutral-400 text-[9px] uppercase">Tagged:</span>
-                        {selectedTaggedStaffIds.map(staffId => {
-                          const staff = staffList.find(s => s.id === staffId);
-                          return (
-                            <span 
-                              key={staffId}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-xs bg-black/60 border border-[var(--jarvis-border)] text-white text-[10px]"
+                    {/* Active Tags and Deadline Chips row */}
+                    {(selectedTaggedStaffIds.length > 0 || quickTodoDeadline) && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1.5 border-t border-neutral-800/60 font-mono text-[10px]">
+                        {quickTodoDeadline && (
+                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-xs bg-amber-950/60 border border-amber-500/40 text-amber-300 text-[10px]">
+                            <CalendarClock size={11} className="text-amber-400" />
+                            <span>Due: <strong className="text-white">{new Date(quickTodoDeadline).toLocaleDateString([], { month: 'short', day: 'numeric' })} at {new Date(quickTodoDeadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</strong></span>
+                            <button
+                              type="button"
+                              onClick={() => setQuickTodoDeadline('')}
+                              className="text-neutral-400 hover:text-rose-400 cursor-pointer ml-0.5"
+                              title="Clear deadline"
                             >
-                              <span className="text-[var(--jarvis-primary)] font-bold">@{staff?.name?.split(' ')[0] || 'Staff'}</span>
-                              <button
-                                type="button"
-                                onClick={() => handleToggleTagStaff(staffId)}
-                                className="text-neutral-400 hover:text-rose-400 cursor-pointer ml-0.5"
-                              >
-                                <X size={10} />
-                              </button>
-                            </span>
-                          );
-                        })}
+                              <X size={10} />
+                            </button>
+                          </span>
+                        )}
+
+                        {selectedTaggedStaffIds.length > 0 && (
+                          <>
+                            <span className="text-neutral-400 text-[9px] uppercase">Tagged:</span>
+                            {selectedTaggedStaffIds.map(staffId => {
+                              const staff = staffList.find(s => s.id === staffId);
+                              return (
+                                <span 
+                                  key={staffId}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-xs bg-black/60 border border-[var(--jarvis-border)] text-white text-[10px]"
+                                >
+                                  <span className="text-[var(--jarvis-primary)] font-bold">@{staff?.name?.split(' ')[0] || 'Staff'}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleTagStaff(staffId)}
+                                    className="text-neutral-400 hover:text-rose-400 cursor-pointer ml-0.5"
+                                  >
+                                    <X size={10} />
+                                  </button>
+                                </span>
+                              );
+                            })}
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1303,6 +1521,51 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-1.5 shrink-0">
+                                    {pt.deadline ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingDeadlineTodo(pt);
+                                          const d = new Date(pt.deadline!);
+                                          const pad = (n: number) => n.toString().padStart(2, '0');
+                                          const dtStr = !isNaN(d.getTime()) 
+                                            ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+                                            : '';
+                                          setEditTodoDeadlineValue(dtStr);
+                                        }}
+                                        className={`px-2 py-0.5 rounded-xs font-mono text-[9px] uppercase tracking-wider flex items-center gap-1 border transition-all cursor-pointer ${
+                                          new Date(pt.deadline).getTime() < Date.now() && !pt.completed
+                                            ? 'bg-rose-950/80 text-rose-300 border-rose-500/50 font-bold'
+                                            : 'bg-amber-950/60 text-amber-300 border-amber-500/40 hover:border-amber-400'
+                                        }`}
+                                        title="Click to edit deadline"
+                                      >
+                                        <CalendarClock size={10} className={new Date(pt.deadline).getTime() < Date.now() && !pt.completed ? 'text-rose-400 animate-pulse' : 'text-amber-400'} />
+                                        <span>
+                                          {new Date(pt.deadline).getTime() < Date.now() && !pt.completed ? 'Overdue: ' : 'Due: '}
+                                          {new Date(pt.deadline).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                          {new Date(pt.deadline).getHours() !== 0 || new Date(pt.deadline).getMinutes() !== 0 
+                                            ? ` ${new Date(pt.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` 
+                                            : ''}
+                                        </span>
+                                      </button>
+                                    ) : (
+                                      onUpdateTodo && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setEditingDeadlineTodo(pt);
+                                            setEditTodoDeadlineValue(getQuickDeadlinePreset('today_eod'));
+                                          }}
+                                          className="px-2 py-0.5 rounded-xs bg-[#171922] hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 font-mono text-[9px] text-neutral-400 hover:text-white uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
+                                          title="Add deadline to this task"
+                                        >
+                                          <CalendarClock size={10} />
+                                          <span>+ Due Date</span>
+                                        </button>
+                                      )
+                                    )}
+
                                     {pt.isDaily && (
                                       <span className="px-2 py-0.5 rounded-xs bg-amber-950/60 border border-amber-500/40 font-mono text-[9px] text-amber-300 uppercase tracking-wider font-bold">
                                         Daily
@@ -1311,6 +1574,17 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     <span className="px-2 py-0.5 rounded-xs bg-black/60 border border-neutral-800 font-mono text-[9px] text-neutral-400 uppercase tracking-wider">
                                       Task
                                     </span>
+
+                                    {onDeleteTodo && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onDeleteTodo(pt.id)}
+                                        className="p-1 text-neutral-500 hover:text-rose-400 transition-colors cursor-pointer rounded-xs"
+                                        title="Delete task"
+                                      >
+                                        <Trash2 size={11} />
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
 
@@ -1375,6 +1649,9 @@ const Dashboard: React.FC<DashboardProps> = ({
                                 </span>
                                 <span className="text-[10px] text-neutral-400 uppercase">
                                   STEP {t.stepId}: {t.stepTitle}
+                                </span>
+                                <span className="px-2 py-0.5 bg-[#171922] border border-neutral-700 text-amber-300 text-[10px] uppercase font-bold tracking-wider" title="Estimated Duration (Hrs : MM)">
+                                  EST {formatHrsMM(t.timeAllocated)} Hrs
                                 </span>
                               </div>
 
@@ -1455,8 +1732,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     </span>
                                   </div>
                                   <div className="text-[10px] text-rose-300/90 flex items-center gap-1">
-                                    <ShieldAlert size={11} className="shrink-0" />
-                                    <span>Escalated to Division Managers & Directors dashboard</span>
+                                    <ShieldAlert size={11} className="shrink-0 text-rose-400" />
+                                    <span>Automated email notification dispatched to Manager, GM, Director & Admin</span>
                                   </div>
                                 </div>
                               ) : (
@@ -1476,9 +1753,13 @@ const Dashboard: React.FC<DashboardProps> = ({
                             {/* Bottom Row: Auto Time-Tracking & Actions */}
                             <div className="pt-2.5 border-t border-neutral-800/80 flex flex-wrap items-center justify-between gap-2 font-mono">
                               <div className="flex items-center gap-2 text-xs">
-                                <span className="text-neutral-400 text-[10px] uppercase">TIME LOGGED:</span>
-                                <span className="font-bold text-white bg-black/50 px-2 py-0.5 rounded-xs border border-neutral-800">
-                                  {t.timeSpent || 0}m
+                                <span className="text-neutral-400 text-[10px] uppercase">EST:</span>
+                                <span className="font-bold text-amber-300 bg-black/50 px-2 py-0.5 rounded-xs border border-neutral-800 text-[10px]">
+                                  {formatHrsMM(t.timeAllocated)} Hrs
+                                </span>
+                                <span className="text-neutral-400 text-[10px] uppercase ml-1">LOGGED:</span>
+                                <span className="font-bold text-white bg-black/50 px-2 py-0.5 rounded-xs border border-neutral-800 text-[10px]">
+                                  {formatHrsMM(t.timeSpent ? Math.floor(t.timeSpent / 60) : 0)} Hrs ({t.timeSpent || 0}m)
                                 </span>
                                 {isCurrentlyTracking && (
                                   <span className="px-2 py-0.5 rounded-xs bg-emerald-950 border border-emerald-500/50 text-emerald-300 text-[10px] font-bold uppercase flex items-center gap-1">
@@ -2363,6 +2644,102 @@ const Dashboard: React.FC<DashboardProps> = ({
               >
                 <Check size={14} strokeWidth={3} /> Confirm Reschedule
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT TODO DEADLINE MODAL */}
+      {editingDeadlineTodo && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-[#0b0c0f] border border-amber-500/50 rounded-sm w-full max-w-sm shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-4 bg-amber-950/30 border-b border-neutral-800 flex justify-between items-center text-white">
+              <div className="flex items-center gap-2">
+                <CalendarClock size={16} className="text-amber-400" />
+                <h3 className="text-xs font-black uppercase text-white font-heading">
+                  Task Deadline Adjustment
+                </h3>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setEditingDeadlineTodo(null)} 
+                className="text-neutral-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 font-mono text-xs">
+              <div className="p-2.5 bg-[#12141a] border border-neutral-800 rounded-xs text-[11px] text-neutral-300">
+                <div className="text-[9px] text-neutral-500 uppercase">Directive:</div>
+                <div className="font-bold text-white truncate">{editingDeadlineTodo.text}</div>
+              </div>
+
+              <div>
+                <label className="block text-[9px] text-neutral-400 uppercase tracking-wider mb-1">
+                  Choose New Deadline
+                </label>
+                <input
+                  type="datetime-local"
+                  value={editTodoDeadlineValue}
+                  onChange={e => setEditTodoDeadlineValue(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#12141a] border border-neutral-700 focus:border-amber-400 text-xs text-white outline-none rounded-xs [color-scheme:dark]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setEditTodoDeadlineValue(getQuickDeadlinePreset('today_eod'))}
+                  className="p-1.5 bg-[#171922] hover:bg-neutral-800 border border-neutral-800 rounded-xs text-[9px] text-left text-neutral-300 cursor-pointer"
+                >
+                  Today 18:00
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditTodoDeadlineValue(getQuickDeadlinePreset('tomorrow_eod'))}
+                  className="p-1.5 bg-[#171922] hover:bg-neutral-800 border border-neutral-800 rounded-xs text-[9px] text-left text-neutral-300 cursor-pointer"
+                >
+                  Tomorrow 18:00
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onUpdateTodo) {
+                      onUpdateTodo({ ...editingDeadlineTodo, deadline: undefined });
+                    }
+                    setEditingDeadlineTodo(null);
+                  }}
+                  className="px-2.5 py-1 text-[10px] text-rose-400 hover:underline uppercase cursor-pointer"
+                >
+                  Remove Deadline
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingDeadlineTodo(null)}
+                    className="px-3 py-1.5 text-[10px] text-neutral-400 hover:text-white uppercase cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onUpdateTodo && editTodoDeadlineValue) {
+                        onUpdateTodo({ ...editingDeadlineTodo, deadline: new Date(editTodoDeadlineValue).toISOString() });
+                      }
+                      setEditingDeadlineTodo(null);
+                    }}
+                    className="px-4 py-1.5 bg-amber-400 hover:bg-amber-300 text-black font-black text-[10px] uppercase rounded-xs transition-colors cursor-pointer"
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

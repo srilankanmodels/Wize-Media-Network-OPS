@@ -5,7 +5,7 @@ import QuotationBuilder from './QuotationBuilder';
 import CommunicationHub from './CommunicationHub';
 import { generateQuotationPDF, generateVaultDocumentPDF } from '../utils/pdfGenerator';
 import { sendTaskAssignmentEmail } from '../utils/emailDispatcher';
-import { ArrowLeft, Calendar, Briefcase, FileText, Folder, UploadCloud, Download, Clock, BarChart3, ChevronRight, X, MessageSquare, ShieldCheck, DollarSign, Send, CreditCard, FileCheck, Plus, Zap, ExternalLink, Eye, Hash, Activity, Check, Pencil, ArrowUpRight, PauseCircle, XCircle, PlayCircle, AlertTriangle, ShieldAlert, CheckCircle2, Edit2 } from 'lucide-react';
+import { ArrowLeft, Calendar, Briefcase, FileText, Folder, UploadCloud, Download, Clock, BarChart3, ChevronRight, X, MessageSquare, ShieldCheck, DollarSign, Send, CreditCard, FileCheck, Plus, Zap, ExternalLink, Eye, Hash, Activity, Check, Pencil, ArrowUpRight, PauseCircle, XCircle, PlayCircle, AlertTriangle, ShieldAlert, CheckCircle2, Edit2, Printer, RefreshCw } from 'lucide-react';
 
 interface ProjectDetailProps {
   project: Project;
@@ -33,6 +33,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
   const [activeTab, setActiveTab] = useState<'workflow' | 'payments' | 'quotations' | 'documents'>('workflow');
   const [paymentForm, setPaymentForm] = useState({ amount: '', type: 'Advance', method: 'Transfer', notes: '' });
   const [selectedFile, setSelectedFile] = useState<Document | null>(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   
   // Editing states for header
   const [isEditingName, setIsEditingName] = useState(false);
@@ -221,6 +223,104 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     onUpdateProject({ ...project, steps: project.steps.filter(s => s.id !== stepId) });
   };
 
+  const getPdfBlobUrl = (doc: Document): string => {
+    // 1. If document has a valid base64 data URL
+    if (doc.url && doc.url.startsWith('data:')) {
+      try {
+        const parts = doc.url.split(';base64,');
+        if (parts.length === 2) {
+          const contentType = parts[0].split(':')[1] || 'application/pdf';
+          const raw = window.atob(parts[1]);
+          const rawLength = raw.length;
+          const uInt8Array = new Uint8Array(rawLength);
+          for (let i = 0; i < rawLength; ++i) {
+            uInt8Array[i] = raw.charCodeAt(i);
+          }
+          const blob = new Blob([uInt8Array], { type: contentType });
+          return URL.createObjectURL(blob);
+        }
+      } catch (err) {
+        console.warn('Direct base64 blob parsing failed for preview:', err);
+      }
+    }
+
+    // 2. If already a blob URL
+    if (doc.url && doc.url.startsWith('blob:')) {
+      return doc.url;
+    }
+
+    // 3. If it's a quotation or named Quotation_*.pdf: Generate high-precision PDF on the fly
+    if (doc.name.toLowerCase().includes('quotation') || (project.quotations && project.quotations.length > 0)) {
+      const quoteId = doc.name.replace('Quotation_', '').replace('.pdf', '');
+      const matchingQuote = project.quotations?.find(q => q.id === quoteId) || project.quotations?.[0] || {
+        id: quoteId || `QT-${Date.now().toString().slice(-4)}`,
+        date: doc.uploadDate || new Date(),
+        items: [
+          { 
+            id: '1', 
+            description: `${project.projectName} - Creative Strategy & Deployment`, 
+            quantity: 1, 
+            unitPrice: project.advanceAmount || 150000, 
+            total: project.advanceAmount || 150000 
+          }
+        ],
+        subtotal: project.advanceAmount || 150000,
+        tax: Math.round((project.advanceAmount || 150000) * 0.18),
+        total: Math.round((project.advanceAmount || 150000) * 1.18),
+        status: 'Approved' as const
+      };
+
+      const pdf = generateQuotationPDF(
+        matchingQuote,
+        agencyProfile,
+        project.clientName,
+        project.projectName,
+        project.jobNumber
+      );
+      const pdfBlob = pdf.output('blob');
+      return URL.createObjectURL(pdfBlob);
+    }
+
+    // 4. Default verified vault document
+    const vaultPdf = generateVaultDocumentPDF(
+      doc.name,
+      project.projectName,
+      project.clientName,
+      doc.uploadedBy,
+      doc.uploadDate
+    );
+    const pdfBlob = vaultPdf.output('blob');
+    return URL.createObjectURL(pdfBlob);
+  };
+
+  useEffect(() => {
+    let currentUrl: string | null = null;
+    if (selectedFile) {
+      const isPdf = selectedFile.type?.includes('pdf') || selectedFile.name?.toLowerCase().endsWith('.pdf');
+      if (isPdf) {
+        setIsGeneratingPdf(true);
+        try {
+          currentUrl = getPdfBlobUrl(selectedFile);
+          setPreviewBlobUrl(currentUrl);
+        } catch (err) {
+          console.error('Error preparing PDF preview URL:', err);
+        } finally {
+          setIsGeneratingPdf(false);
+        }
+      } else {
+        setPreviewBlobUrl(null);
+      }
+    } else {
+      setPreviewBlobUrl(null);
+    }
+
+    return () => {
+      if (currentUrl) {
+        URL.revokeObjectURL(currentUrl);
+      }
+    };
+  }, [selectedFile]);
+
   const downloadFile = (doc: Document) => {
     // 1. If document has a valid base64 data URL (e.g. from user upload or saved PDF)
     if (doc.url && doc.url.startsWith('data:')) {
@@ -322,16 +422,36 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
 
   const handleAssignTask = (tid: string, sid: string) => {
     let taskText = '';
-    const newSteps = project.steps.map(s => ({ 
-        ...s, 
-        tasks: s.tasks.map(t => {
-            if (t.id === tid) {
-                taskText = t.text;
-                return { ...t, assignedTo: sid };
-            }
-            return t;
+    let taskDeadline: any = undefined;
+
+    const newSteps = project.steps.map(s => {
+      const updatedTasks = s.tasks.map(t => {
+        if (t.id === tid) {
+          taskText = t.text;
+          taskDeadline = t.deadline || s.deadline || project.dueDate;
+          return { ...t, assignedTo: sid };
+        }
+        return t;
+      });
+
+      const updatedSubSteps = s.subSteps?.map(ss => ({
+        ...ss,
+        tasks: ss.tasks.map(t => {
+          if (t.id === tid) {
+            taskText = t.text;
+            taskDeadline = t.deadline || s.deadline || project.dueDate;
+            return { ...t, assignedTo: sid };
+          }
+          return t;
         })
-    }));
+      }));
+
+      return {
+        ...s,
+        tasks: updatedTasks,
+        subSteps: updatedSubSteps
+      };
+    });
     
     onUpdateProject({ ...project, steps: newSteps });
 
@@ -351,6 +471,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
             projectName: project.projectName,
             clientName: project.clientName,
             jobNumber: project.jobNumber,
+            deadline: taskDeadline,
             assignee: assignedStaff,
             assignerName: currentUser.name
           }).catch(err => console.debug('Email notification dispatch notice:', err));
@@ -568,8 +689,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                   onToggleTask={(tid) => {
                     const newTasks = { ...project.tasksCompleted };
                     newTasks[tid] = !newTasks[tid];
-                    const total = project.steps.reduce((sum, s) => sum + s.tasks.length, 0);
-                    const prog = total === 0 ? 0 : Math.round((Object.keys(newTasks).filter(k => newTasks[k]).length / total) * 100);
+                    const allTasks = project.steps.flatMap(s => [...s.tasks, ...(s.subSteps?.flatMap(ss => ss.tasks) || [])]);
+                    const total = allTasks.length;
+                    const completedCount = allTasks.filter(t => newTasks[t.id]).length;
+                    const prog = total === 0 ? 0 : Math.round((completedCount / total) * 100);
                     onUpdateProject({ ...project, tasksCompleted: newTasks, progress: prog, lastUpdated: new Date() });
                   }}
                   comments={[]}
@@ -580,7 +703,14 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                   assignedTasks={{}}
                   onToggleTimer={handleToggleTimer}
                   onUpdateTask={(tid, updates) => {
-                    const newSteps = project.steps.map(s => ({ ...s, tasks: s.tasks.map(t => t.id === tid ? {...t, ...updates} : t)}));
+                    const newSteps = project.steps.map(s => ({ 
+                      ...s, 
+                      tasks: s.tasks.map(t => t.id === tid ? {...t, ...updates} : t),
+                      subSteps: s.subSteps ? s.subSteps.map(ss => ({
+                        ...ss,
+                        tasks: ss.tasks.map(t => t.id === tid ? {...t, ...updates} : t)
+                      })) : undefined
+                    }));
                     onUpdateProject({ ...project, steps: newSteps });
                   }}
                   onUpdateStep={(sid, updates) => {
@@ -778,35 +908,142 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
         </div>
       </div>
 
-      {/* Asset Preview Modal */}
+      {/* Asset Preview Modal with Native PDF Preview */}
       {selectedFile && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[300] flex items-center justify-center p-4" onClick={() => setSelectedFile(null)}>
-          <div className="bg-[#0b0c0f] border border-neutral-800 rounded-sm w-full max-w-2xl shadow-2xl overflow-hidden font-mono text-xs" onClick={e => e.stopPropagation()}>
-            <div className="p-4 bg-[#0e0f14] border-b border-neutral-800 flex justify-between items-center text-white">
-              <div className="flex items-center gap-2">
-                <FileText size={16} className="text-neutral-400" />
-                <span className="uppercase font-bold truncate max-w-sm">{selectedFile.name}</span>
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[300] flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150" onClick={() => setSelectedFile(null)}>
+          <div className="bg-[#0b0c0f] border border-neutral-700/80 rounded-sm w-full max-w-5xl shadow-2xl overflow-hidden font-mono text-xs flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="p-4 bg-[#0e0f14] border-b border-neutral-800 flex justify-between items-center text-white shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-xs bg-[#171922] border border-neutral-700 flex items-center justify-center shrink-0">
+                  {selectedFile.type?.includes('pdf') || selectedFile.name?.toLowerCase().endsWith('.pdf') ? (
+                    <FileCheck size={16} className="text-rose-400" />
+                  ) : (
+                    <FileText size={16} className="text-neutral-400" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="uppercase font-bold truncate max-w-xs sm:max-w-md text-white font-heading text-sm">
+                      {selectedFile.name}
+                    </span>
+                    {(selectedFile.type?.includes('pdf') || selectedFile.name?.toLowerCase().endsWith('.pdf')) && (
+                      <span className="px-1.5 py-0.2 bg-rose-950/80 border border-rose-500/50 text-rose-300 text-[9px] font-bold uppercase rounded-xs">
+                        PDF PREVIEW
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-neutral-400 uppercase tracking-wider mt-0.5">
+                    {project.projectName} // {project.jobNumber}
+                  </div>
+                </div>
               </div>
-              <button onClick={() => setSelectedFile(null)} className="text-neutral-400 hover:text-white"><X size={18} /></button>
+
+              <div className="flex items-center gap-2">
+                {(selectedFile.type?.includes('pdf') || selectedFile.name?.toLowerCase().endsWith('.pdf')) && previewBlobUrl && (
+                  <>
+                    <a
+                      href={previewBlobUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 bg-[#171922] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 rounded-xs transition-colors flex items-center gap-1 text-[10px] uppercase font-bold"
+                      title="Open in new window"
+                    >
+                      <ExternalLink size={13} />
+                      <span className="hidden sm:inline">Open</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const iframe = document.getElementById('pdf-preview-frame') as HTMLIFrameElement;
+                        if (iframe && iframe.contentWindow) {
+                          try {
+                            iframe.contentWindow.focus();
+                            iframe.contentWindow.print();
+                          } catch (e) {
+                            console.warn('Iframe print access notice:', e);
+                          }
+                        }
+                      }}
+                      className="p-1.5 bg-[#171922] hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-800 rounded-xs transition-colors flex items-center gap-1 text-[10px] uppercase font-bold cursor-pointer"
+                      title="Print PDF"
+                    >
+                      <Printer size={13} />
+                      <span className="hidden sm:inline">Print</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => downloadFile(selectedFile)}
+                  className="px-2.5 py-1.5 bg-white text-black hover:bg-neutral-200 font-black text-[10px] uppercase rounded-xs flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Download File"
+                >
+                  <Download size={12} />
+                  <span className="hidden sm:inline">Download</span>
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setSelectedFile(null)} 
+                  className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-xs transition-colors cursor-pointer"
+                  title="Close Preview"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
-            <div className="p-6 bg-[#07080a] flex items-center justify-center min-h-[250px]">
-              {selectedFile.type.startsWith('image') ? (
-                <img src={selectedFile.url} className="max-w-full max-h-[50vh] rounded-sm object-contain" alt="Preview" />
+            {/* Modal Body / Viewer */}
+            <div className="p-3 sm:p-4 bg-[#07080a] flex-1 flex flex-col items-center justify-center min-h-[400px] overflow-hidden">
+              {selectedFile.type?.startsWith('image') ? (
+                <div className="max-h-[70vh] overflow-auto flex items-center justify-center w-full">
+                  <img src={selectedFile.url} className="max-w-full max-h-[68vh] rounded-xs object-contain shadow-lg" alt="Preview" />
+                </div>
+              ) : (selectedFile.type?.includes('pdf') || selectedFile.name?.toLowerCase().endsWith('.pdf')) ? (
+                <div className="w-full h-[68vh] flex flex-col bg-[#12141a] rounded-xs border border-neutral-800 overflow-hidden relative">
+                  {isGeneratingPdf ? (
+                    <div className="flex-1 flex flex-col items-center justify-center gap-3 text-neutral-400 font-mono">
+                      <RefreshCw className="animate-spin text-white" size={26} />
+                      <span className="text-xs uppercase tracking-wider">Compiling PDF preview buffer...</span>
+                    </div>
+                  ) : previewBlobUrl ? (
+                    <iframe
+                      id="pdf-preview-frame"
+                      src={`${previewBlobUrl}#toolbar=1&navpanes=0`}
+                      className="w-full h-full border-0 bg-[#2a2c36]"
+                      title={selectedFile.name}
+                    />
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-4">
+                      <Folder size={48} className="mx-auto text-neutral-600" />
+                      <div className="text-neutral-300">Unable to load direct PDF render stream</div>
+                      <button onClick={() => downloadFile(selectedFile)} className="px-5 py-2 bg-white text-black font-black uppercase tracking-wider rounded-xs hover:bg-neutral-200">
+                        Download File ({selectedFile.size})
+                      </button>
+                    </div>
+                  )}
+                </div>
               ) : (
-                <div className="text-center space-y-4">
+                <div className="text-center space-y-4 py-12">
                   <Folder size={48} className="mx-auto text-neutral-600" />
-                  <div className="text-neutral-300">File type: {selectedFile.type || 'Binary Document'}</div>
-                  <button onClick={() => downloadFile(selectedFile)} className="px-5 py-2 bg-white text-black font-black uppercase tracking-wider rounded-sm hover:bg-neutral-200">
+                  <div className="text-neutral-300">Binary Asset: {selectedFile.type || 'Generic Document'}</div>
+                  <button onClick={() => downloadFile(selectedFile)} className="px-5 py-2 bg-white text-black font-black uppercase tracking-wider rounded-xs hover:bg-neutral-200">
                     Download File ({selectedFile.size})
                   </button>
                 </div>
               )}
             </div>
 
-            <div className="p-4 bg-[#0e0f14] border-t border-neutral-800 flex justify-between text-neutral-500 text-[10px]">
-              <span>UPLOADED BY: {selectedFile.uploadedBy.toUpperCase()}</span>
-              <span>{new Date(selectedFile.uploadDate).toLocaleDateString()}</span>
+            {/* Modal Footer */}
+            <div className="p-3 bg-[#0e0f14] border-t border-neutral-800 flex flex-wrap justify-between items-center text-neutral-400 text-[10px] shrink-0 font-mono gap-2">
+              <div className="flex items-center gap-4">
+                <span>UPLOADED BY: <strong className="text-neutral-200">{selectedFile.uploadedBy.toUpperCase()}</strong></span>
+                <span>DATE: <strong className="text-neutral-200">{new Date(selectedFile.uploadDate).toLocaleDateString()}</strong></span>
+                <span>SIZE: <strong className="text-neutral-200">{selectedFile.size}</strong></span>
+              </div>
+              <div className="text-neutral-500 text-[9px] uppercase">
+                VERIFIED CRYPTOGRAPHIC RECORD // MEDIAWIZE VAULT
+              </div>
             </div>
           </div>
         </div>

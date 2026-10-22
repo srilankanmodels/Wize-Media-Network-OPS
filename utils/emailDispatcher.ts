@@ -235,6 +235,183 @@ export async function sendTaskAssignmentEmail(params: {
 }
 
 /**
+ * Format minutes into standard "Hrs : MM" string (e.g. 90 -> "01 : 30", 60 -> "01 : 00")
+ */
+export function formatHrsMM(minutes?: number): string {
+  const total = Math.max(0, minutes ?? 60);
+  const hrs = Math.floor(total / 60);
+  const mins = total % 60;
+  return `${String(hrs).padStart(2, '0')} : ${String(mins).padStart(2, '0')}`;
+}
+
+const OVERDUE_ALERTS_DISPATCH_KEY = 'mw_overdue_alerts_dispatched';
+
+/**
+ * 2. Automated SLA breach escalation:
+ * Checks all assigned tasks across all projects & sub-tasks.
+ * If deadline is passed and task is incomplete, dispatches automated email alert
+ * to all Managers, General Managers, Directors, and Administrators.
+ */
+export async function checkAndDispatchOverdueEscalations(
+  projects: Project[], 
+  staffList: StaffMember[]
+): Promise<{ escalatedTasks: any[]; dispatchedEmailsCount: number; errors: string[] }> {
+  const now = Date.now();
+  const errors: string[] = [];
+  const escalatedTasks: any[] = [];
+  let dispatchedCount = 0;
+
+  // Retrieve past sent history to prevent repetitive spam
+  let sentHistory: Record<string, { lastSentAt: number; deadlineMs: number }> = {};
+  try {
+    const raw = localStorage.getItem(OVERDUE_ALERTS_DISPATCH_KEY);
+    if (raw) sentHistory = JSON.parse(raw);
+  } catch (e) {
+    console.debug('Failed to read overdue history:', e);
+  }
+
+  // Identify Leadership recipients: Manager / GM / Director / Admin
+  const leadershipRecipients = (staffList || []).filter(staff => {
+    if (!staff.email) return false;
+    const roleLower = (staff.role || '').toLowerCase().trim();
+    const deptLower = (staff.department || '').toLowerCase().trim();
+
+    return (
+      roleLower.includes('admin') ||
+      roleLower.includes('manager') ||
+      roleLower.includes('lead') ||
+      roleLower === 'management' ||
+      roleLower.includes('gm') ||
+      roleLower.includes('general manager') ||
+      roleLower.includes('director') ||
+      deptLower.includes('director') ||
+      deptLower.includes('management')
+    );
+  });
+
+  if (leadershipRecipients.length === 0) {
+    return { escalatedTasks: [], dispatchedEmailsCount: 0, errors: ['No leadership recipients found'] };
+  }
+
+  // Iterate all projects and steps (including sub-steps)
+  for (const project of projects || []) {
+    for (const step of project.steps || []) {
+      const allTasks = [
+        ...(step.tasks || []),
+        ...(step.subSteps?.flatMap(ss => ss.tasks) || [])
+      ];
+
+      for (const task of allTasks) {
+        // Condition: Task must be assigned to someone and not completed
+        const isDone = !!(project.tasksCompleted && project.tasksCompleted[task.id]) || !!task.completed;
+        if (!task.assignedTo || isDone) continue;
+
+        // Effective deadline: task.deadline || step.deadline || project.dueDate
+        const effectiveDeadline = task.deadline || step.deadline || project.dueDate;
+        if (!effectiveDeadline) continue;
+
+        const deadlineMs = new Date(effectiveDeadline).getTime();
+        // Check if deadline is passed
+        if (deadlineMs < now) {
+          const assignee = staffList.find(s => s.id === task.assignedTo);
+          const taskKey = `${project.id}-${task.id}`;
+          const lastAlert = sentHistory[taskKey];
+
+          // Cooldown check: do not resend within 12 hours unless deadline changed
+          const twelveHoursMs = 12 * 60 * 60 * 1000;
+          if (lastAlert && (now - lastAlert.lastSentAt < twelveHoursMs) && lastAlert.deadlineMs === deadlineMs) {
+            continue;
+          }
+
+          const overdueMinutes = Math.floor((now - deadlineMs) / (60 * 1000));
+          const overdueHours = Math.floor(overdueMinutes / 60);
+          const overdueMins = overdueMinutes % 60;
+          const overdueStr = overdueHours > 0 ? `${overdueHours}h ${overdueMins}m` : `${overdueMins}m`;
+
+          escalatedTasks.push({
+            taskId: task.id,
+            taskText: task.text,
+            projectName: project.projectName,
+            jobNumber: project.jobNumber,
+            clientName: project.clientName,
+            assigneeName: assignee?.name || 'Assigned Specialist',
+            assigneeEmail: assignee?.email,
+            assigneeRole: assignee?.role || task.role,
+            deadline: effectiveDeadline,
+            overdueStr
+          });
+
+          // Build email subject and body
+          const subject = `[SLA BREACH ALERT] Overdue Directive: "${task.text}" - ${project.projectName}`;
+          const body = [
+            `MEDIAWIZE WORKSPACE // EXECUTIVE SLA BREACH NOTIFICATION`,
+            `================================================================`,
+            `URGENT ATTENTION REQUIRED: A scheduled project directive has breached its assigned deadline without completion.`,
+            ``,
+            `DIRECTIVE DETAILS:`,
+            `- Task Description : ${task.text}`,
+            `- Project Name     : ${project.projectName} (${project.jobNumber})`,
+            `- Client           : ${project.clientName}`,
+            `- Assigned To      : ${assignee?.name || 'Assigned Specialist'} [${assignee?.role || task.role}]`,
+            `- Assignee Email   : ${assignee?.email || 'N/A'}`,
+            `- Allocated Est.   : ${formatHrsMM(task.timeAllocated)} Hrs`,
+            `- Scheduled Target : ${new Date(effectiveDeadline).toLocaleString()}`,
+            `- Time Overdue     : ${overdueStr} (CRITICAL SLA VIOLATION)`,
+            ``,
+            `RECIPIENTS DISPATCH LIST:`,
+            `- General Managers`,
+            `- Division Managers`,
+            `- Executive Directors`,
+            `- System Administrators`,
+            ``,
+            `ACTION REQUIRED:`,
+            `Please review workflow bottleneck or reallocate resources in the Mediawize Workload Command.`,
+            `Workspace URL: ${window.location.origin}`,
+            ``,
+            `----------------------------------------------------------------`,
+            `Automated SLA Escalation Protocol // Mediawize Engine`
+          ].join('\n');
+
+          // Send to all leadership recipients
+          for (const leader of leadershipRecipients) {
+            try {
+              await sendAutomatedEmail({
+                to: leader.email,
+                toName: leader.name,
+                subject,
+                body,
+                type: 'system_alert'
+              });
+              dispatchedCount++;
+            } catch (err: any) {
+              errors.push(`${leader.email}: ${err.message}`);
+            }
+          }
+
+          // Mark as sent in localStorage
+          sentHistory[taskKey] = {
+            lastSentAt: now,
+            deadlineMs
+          };
+        }
+      }
+    }
+  }
+
+  try {
+    localStorage.setItem(OVERDUE_ALERTS_DISPATCH_KEY, JSON.stringify(sentHistory));
+  } catch (e) {
+    console.debug('Failed to save overdue history:', e);
+  }
+
+  return {
+    escalatedTasks,
+    dispatchedEmailsCount: dispatchedCount,
+    errors
+  };
+}
+
+/**
  * 2. Dispatches automated email notification when people are tagged in a quick task / to-do
  */
 export async function sendTaskMentionEmail(params: {

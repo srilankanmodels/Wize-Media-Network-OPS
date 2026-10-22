@@ -96,6 +96,14 @@ const ModernDateTimePicker: React.FC<{
   );
 };
 
+// Helper to format minutes into standard "Hrs : MM" representation
+export const formatHrsMM = (minutes?: number): string => {
+  const total = Math.max(0, minutes ?? 60);
+  const hrs = Math.floor(total / 60);
+  const mins = total % 60;
+  return `${String(hrs).padStart(2, '0')} : ${String(mins).padStart(2, '0')}`;
+};
+
 // --- Task Item Component ---
 const TaskItem: React.FC<{
   task: Task;
@@ -110,6 +118,7 @@ const TaskItem: React.FC<{
   activeTimerTaskId?: string;
 }> = ({ task, taskIndex = 0, isCompleted, onToggle, staffList, onAssign, onUpdate, onDelete, onToggleTimer, activeTimerTaskId }) => {
   const [showAssignMenu, setShowAssignMenu] = useState(false);
+  const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [tempNotes, setTempNotes] = useState(task.notes || '');
@@ -126,17 +135,41 @@ const TaskItem: React.FC<{
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showAssignMenu]);
   
+  // Hours and minutes for Hrs : MM configuration
+  const currentTotalMins = task.timeAllocated ?? 60;
+  const [editHrs, setEditHrs] = useState(Math.floor(currentTotalMins / 60));
+  const [editMins, setEditMins] = useState(currentTotalMins % 60);
+  const [editDeadline, setEditDeadline] = useState(
+    task.deadline ? new Date(new Date(task.deadline).getTime() - new Date(task.deadline).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''
+  );
+
   const [editData, setEditData] = useState({
     text: task.text,
     role: task.role,
-    timeAllocated: task.timeAllocated
+    priority: task.priority || 'Medium'
   });
 
   const assignedStaff = staffList.find(s => s.id === task.assignedTo);
   const isTimerActive = !!task.timerStart;
 
+  // Deadline calculation
+  const deadlineDate = task.deadline ? new Date(task.deadline) : null;
+  const isOverdue = deadlineDate && !isCompleted ? deadlineDate.getTime() < Date.now() : false;
+  const isDueToday = deadlineDate && !isCompleted ? (
+    deadlineDate.getDate() === new Date().getDate() &&
+    deadlineDate.getMonth() === new Date().getMonth() &&
+    deadlineDate.getFullYear() === new Date().getFullYear()
+  ) : false;
+
   const handleSaveEdit = () => {
-    onUpdate(editData);
+    const totalMinutes = Math.max(1, (parseInt(String(editHrs)) || 0) * 60 + (parseInt(String(editMins)) || 0));
+    onUpdate({
+      text: editData.text,
+      role: editData.role,
+      priority: editData.priority as any,
+      timeAllocated: totalMinutes,
+      deadline: editDeadline ? new Date(editDeadline).toISOString() : undefined
+    });
     setIsEditing(false);
   };
 
@@ -144,22 +177,25 @@ const TaskItem: React.FC<{
     return (
       <div className="bg-[#12141a] p-5 rounded-sm border border-neutral-700 animate-in zoom-in-95 duration-200 space-y-4 font-mono text-white">
         <div className="flex justify-between items-center">
-          <span className="text-[10px] uppercase tracking-widest text-neutral-400">Edit Task Node</span>
+          <span className="text-[10px] uppercase tracking-widest text-neutral-400 font-bold">Edit Task Directive Node</span>
           <button onClick={onDelete} className="text-neutral-500 hover:text-rose-400 transition-colors" title="Delete task">
             <Trash2 size={15} />
           </button>
         </div>
+
         <div>
-          <label className="block text-[9px] uppercase tracking-widest text-neutral-500 mb-1">Descriptor</label>
+          <label className="block text-[9px] uppercase tracking-widest text-neutral-400 mb-1 font-semibold">Directive Descriptor</label>
           <input 
             value={editData.text}
             onChange={e => setEditData({...editData, text: e.target.value})}
             className="w-full px-3 py-2 bg-[#0c0d12] border border-neutral-800 rounded-sm text-xs text-white outline-none focus:border-white"
+            placeholder="Specify actionable task..."
           />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-[9px] uppercase tracking-widest text-neutral-500 mb-1">Target Specialist</label>
+            <label className="block text-[9px] uppercase tracking-widest text-neutral-400 mb-1 font-semibold">Target Specialist Role</label>
             <select 
               value={editData.role}
               onChange={e => setEditData({...editData, role: e.target.value})}
@@ -168,19 +204,105 @@ const TaskItem: React.FC<{
               {Object.values(Role).map(role => <option key={role} value={role}>{role}</option>)}
             </select>
           </div>
+
           <div>
-            <label className="block text-[9px] uppercase tracking-widest text-neutral-500 mb-1">Time Sync (Mins)</label>
-            <input 
-              type="number"
-              value={editData.timeAllocated}
-              onChange={e => setEditData({...editData, timeAllocated: parseInt(e.target.value) || 0})}
-              className="w-full px-3 py-2 bg-[#0c0d12] border border-neutral-800 rounded-sm text-xs text-white outline-none focus:border-white"
-            />
+            <label className="block text-[9px] uppercase tracking-widest text-neutral-400 mb-1 font-semibold">Priority Matrix</label>
+            <select 
+              value={editData.priority}
+              onChange={e => setEditData({...editData, priority: e.target.value as any})}
+              className="w-full px-3 py-2 bg-[#0c0d12] border border-neutral-800 rounded-sm text-xs text-white outline-none"
+            >
+              <option value="Critical">Critical (Immediate SLA)</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+            </select>
           </div>
         </div>
+
+        {/* Hrs : MM Time Allocation */}
+        <div className="bg-[#0b0c10] p-3 rounded-sm border border-neutral-800 space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="block text-[9px] uppercase tracking-widest text-neutral-300 font-bold">
+              Allocated Time (Hrs : MM)
+            </label>
+            <span className="text-[10px] text-amber-400 font-bold">
+              EST: {String(editHrs).padStart(2, '0')} : {String(editMins).padStart(2, '0')} ({Math.max(1, editHrs * 60 + editMins)} mins)
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <span className="text-[8px] uppercase tracking-wider text-neutral-500 block mb-0.5">Hours (Hrs)</span>
+              <input 
+                type="number"
+                min="0"
+                max="999"
+                value={editHrs}
+                onChange={e => setEditHrs(Math.max(0, parseInt(e.target.value) || 0))}
+                className="w-full px-3 py-1.5 bg-[#12141a] border border-neutral-700 rounded-sm text-xs text-white text-center font-bold outline-none focus:border-white"
+              />
+            </div>
+            <div>
+              <span className="text-[8px] uppercase tracking-wider text-neutral-500 block mb-0.5">Minutes (MM)</span>
+              <input 
+                type="number"
+                min="0"
+                max="59"
+                value={editMins}
+                onChange={e => setEditMins(Math.min(59, Math.max(0, parseInt(e.target.value) || 0)))}
+                className="w-full px-3 py-1.5 bg-[#12141a] border border-neutral-700 rounded-sm text-xs text-white text-center font-bold outline-none focus:border-white"
+              />
+            </div>
+          </div>
+
+          {/* Quick Duration Presets */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <span className="text-[8px] text-neutral-500 uppercase mr-1">Presets:</span>
+            {[
+              { label: '00 : 30', h: 0, m: 30 },
+              { label: '01 : 00', h: 1, m: 0 },
+              { label: '02 : 00', h: 2, m: 0 },
+              { label: '04 : 00', h: 4, m: 0 },
+              { label: '08 : 00', h: 8, m: 0 }
+            ].map(p => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => { setEditHrs(p.h); setEditMins(p.m); }}
+                className="px-2 py-0.5 bg-[#171922] hover:bg-neutral-800 border border-neutral-800 text-[9px] text-neutral-300 hover:text-white rounded-xs transition-colors cursor-pointer"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Task Deadline Input */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-[9px] uppercase tracking-widest text-neutral-400 font-semibold">Sub-Task Deadline</label>
+            {editDeadline && (
+              <button 
+                type="button"
+                onClick={() => setEditDeadline('')}
+                className="text-[9px] text-rose-400 hover:underline uppercase cursor-pointer"
+              >
+                Clear Deadline
+              </button>
+            )}
+          </div>
+          <input 
+            type="datetime-local"
+            value={editDeadline}
+            onChange={e => setEditDeadline(e.target.value)}
+            className="w-full px-3 py-2 bg-[#0c0d12] border border-neutral-800 rounded-sm text-xs text-white outline-none focus:border-white font-mono"
+          />
+        </div>
+
         <div className="flex gap-2 justify-end pt-2 border-t border-neutral-800">
           <button onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-xs text-neutral-400 hover:text-white">Cancel</button>
-          <button onClick={handleSaveEdit} className="px-4 py-1.5 bg-white text-black font-black text-xs uppercase rounded-sm hover:bg-neutral-200">Save</button>
+          <button onClick={handleSaveEdit} className="px-4 py-1.5 bg-white text-black font-black text-xs uppercase rounded-sm hover:bg-neutral-200">Save Changes</button>
         </div>
       </div>
     );
@@ -188,33 +310,96 @@ const TaskItem: React.FC<{
 
   return (
     <div 
-      style={{ zIndex: showAssignMenu ? 60 : Math.max(1, 30 - (taskIndex || 0)) }}
+      style={{ zIndex: (showAssignMenu || showDeadlinePicker) ? 70 : Math.max(1, 30 - (taskIndex || 0)) }}
       className={`p-4 rounded-sm border transition-all relative ${
-        isCompleted && !showAssignMenu ? 'bg-[#0e0f14]/80 border-neutral-800/60 opacity-60' : 'bg-[#12141a] border-neutral-800 hover:border-neutral-700'
+        isCompleted && !showAssignMenu && !showDeadlinePicker 
+          ? 'bg-[#0e0f14]/80 border-neutral-800/60 opacity-60' 
+          : isOverdue
+          ? 'bg-[#180d10] border-rose-600/50 hover:border-rose-500 shadow-[0_0_15px_-3px_rgba(244,63,94,0.15)]'
+          : 'bg-[#12141a] border-neutral-800 hover:border-neutral-700'
       }`}
     >
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        {/* Left: Check & Name */}
-        <div className="flex items-center gap-3.5 flex-1 min-w-0">
-          <button onClick={onToggle} className={`shrink-0 transition-colors ${isCompleted ? 'text-emerald-400' : 'text-neutral-500 hover:text-white'}`}>
+      <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+        {/* Left: Check, Name, Est in Hrs:MM, Role & Deadline */}
+        <div className="flex items-start gap-3.5 flex-1 min-w-0">
+          <button onClick={onToggle} className={`shrink-0 mt-0.5 transition-colors ${isCompleted ? 'text-emerald-400' : 'text-neutral-500 hover:text-white'}`}>
             {isCompleted ? <CheckCircle2 size={18} /> : <Circle size={18} />}
           </button>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <span className={`text-xs font-semibold uppercase tracking-wide block truncate ${isCompleted ? 'text-neutral-400 line-through' : 'text-white'}`}>
               {task.text}
             </span>
-            <div className="flex items-center gap-3 mt-1 font-mono text-[9px] text-neutral-500">
-              <span className="px-1.5 py-0.2 bg-[#0c0d12] border border-neutral-800 rounded-sm text-neutral-400">
+
+            {/* Sub-task Metadata: Role, Est in Hrs : MM, Act in Hrs : MM, Deadline Badge */}
+            <div className="flex flex-wrap items-center gap-2 mt-1.5 font-mono text-[9px]">
+              <span className="px-1.5 py-0.5 bg-[#0c0d12] border border-neutral-800 rounded-xs text-neutral-400 font-semibold uppercase">
                 {task.role}
               </span>
-              <span>EST: {task.timeAllocated || 60}m</span>
-              {task.timeSpent ? <span className="text-emerald-400">ACT: {Math.floor(task.timeSpent / 60)}m</span> : null}
+
+              {/* Requirement: est should be in Hrs : MM */}
+              <span 
+                className="px-2 py-0.5 bg-[#171922] border border-neutral-700 text-neutral-200 font-bold tracking-wider rounded-xs"
+                title="Allocated Estimate: Hours : Minutes"
+              >
+                EST {formatHrsMM(task.timeAllocated)} Hrs
+              </span>
+
+              {task.timeSpent ? (
+                <span 
+                  className="px-2 py-0.5 bg-emerald-950/40 border border-emerald-500/30 text-emerald-400 font-bold tracking-wider rounded-xs"
+                  title="Actual Tracked Time: Hours : Minutes"
+                >
+                  ACT {formatHrsMM(Math.floor(task.timeSpent / 60))} Hrs
+                </span>
+              ) : null}
+
+              {/* Requirement: Each sub-task also needs to have a deadline */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDeadlinePicker(!showDeadlinePicker);
+                  }}
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-xs border text-[9px] font-bold uppercase transition-all cursor-pointer ${
+                    task.deadline
+                      ? isOverdue
+                        ? 'bg-rose-950/80 border-rose-500/60 text-rose-300 shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse'
+                        : isDueToday
+                        ? 'bg-amber-950/70 border-amber-500/60 text-amber-300'
+                        : 'bg-[#181a24] border-neutral-700 text-neutral-300 hover:text-white hover:border-neutral-500'
+                      : 'bg-[#0c0d12] border-dashed border-neutral-700 text-neutral-400 hover:text-white hover:border-neutral-500'
+                  }`}
+                  title={task.deadline ? `Sub-task Deadline: ${new Date(task.deadline).toLocaleString()}` : "Set deadline for this task node"}
+                >
+                  <Calendar size={11} className={task.deadline ? (isOverdue ? 'text-rose-400' : isDueToday ? 'text-amber-400' : 'text-neutral-300') : 'text-neutral-500'} />
+                  <span>
+                    {task.deadline
+                      ? `${isOverdue ? 'OVERDUE: ' : 'DUE: '}${new Date(task.deadline).toLocaleDateString([], { month: 'short', day: 'numeric' })} ${new Date(task.deadline).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                      : 'SET DEADLINE'}
+                  </span>
+                </button>
+
+                {showDeadlinePicker && (
+                  <div className="absolute left-0 top-full mt-2 z-[200]" onClick={e => e.stopPropagation()}>
+                    <ModernDateTimePicker 
+                      title={`Sub-Task Deadline // ${task.text.slice(0, 18)}`}
+                      initialValue={task.deadline ? new Date(task.deadline) : new Date(Date.now() + 86400000)}
+                      onConfirm={(date) => {
+                        onUpdate({ deadline: date.toISOString() });
+                        setShowDeadlinePicker(false);
+                      }}
+                      onClose={() => setShowDeadlinePicker(false)}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Right: Actions */}
-        <div className="flex items-center gap-3 shrink-0 self-end sm:self-center font-mono">
+        <div className="flex items-center gap-2.5 shrink-0 self-end lg:self-center font-mono">
           {/* Timer button */}
           <button 
             onClick={onToggleTimer}
@@ -343,15 +528,45 @@ const StepCard: React.FC<StepCardProps> = ({
   };
 
   const handleAddTask = () => {
+    const defaultDeadline = step.deadline 
+      ? new Date(step.deadline).toISOString() 
+      : new Date(Date.now() + 86400000).toISOString();
+
     const newTask: Task = {
       id: `${step.id}-${Date.now()}`,
       text: 'New Operational Directive',
       completed: false,
       role: Role.AE,
       timeAllocated: 60,
-      timeSpent: 0
+      timeSpent: 0,
+      deadline: defaultDeadline,
+      priority: 'Medium'
     };
     onUpdateStep(step.id, { tasks: [...step.tasks, newTask] });
+  };
+
+  const handleAddSubTask = () => {
+    const defaultDeadline = step.deadline 
+      ? new Date(step.deadline).toISOString() 
+      : new Date(Date.now() + 86400000).toISOString();
+
+    const newSubTask: Task = {
+      id: `sub-${step.id}-${Date.now()}`,
+      text: 'New Sub-Directive Node',
+      completed: false,
+      role: Role.AE,
+      timeAllocated: 30, // 00:30 Hrs
+      timeSpent: 0,
+      deadline: defaultDeadline,
+      priority: 'Medium'
+    };
+    const currentSubSteps = step.subSteps || [{ tasks: [] }];
+    const firstSubStep = currentSubSteps[0] || { tasks: [] };
+    const updatedSubSteps = [
+      { ...firstSubStep, tasks: [...firstSubStep.tasks, newSubTask] },
+      ...currentSubSteps.slice(1)
+    ];
+    onUpdateStep(step.id, { subSteps: updatedSubSteps });
   };
 
   const handleDeleteTask = (taskId: string) => {
@@ -482,12 +697,57 @@ const StepCard: React.FC<StepCardProps> = ({
             />
           ))}
 
-          <button 
-            onClick={(e) => { e.stopPropagation(); handleAddTask(); }}
-            className="w-full py-3 border border-dashed border-neutral-800 hover:border-neutral-600 rounded-sm font-mono text-xs uppercase tracking-wider text-neutral-400 hover:text-white transition-colors flex items-center justify-center gap-2"
-          >
-            <Plus size={14} /> Append Directive Node
-          </button>
+          {/* Sub-steps / Sub-tasks rendering */}
+          {step.subSteps && step.subSteps.length > 0 && (
+            <div className="space-y-3 pt-3 border-t border-neutral-800/80">
+              <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-widest flex items-center justify-between">
+                <span>SUB-TASK / SUB-STEP DIRECTIVES</span>
+              </div>
+              {step.subSteps.map((subStep, ssIdx) => (
+                <div key={`substep-${ssIdx}`} className="space-y-2 pl-3 border-l-2 border-neutral-800">
+                  <div className="text-[9px] font-mono uppercase text-neutral-500 font-bold">
+                    Sub-Phase {ssIdx + 1}
+                  </div>
+                  {subStep.tasks.map((task, tIdx) => (
+                    <TaskItem
+                      key={task.id}
+                      task={task}
+                      taskIndex={tIdx}
+                      isCompleted={!!completedTasks[task.id]}
+                      onToggle={() => onToggleTask(task.id)}
+                      staffList={staffList}
+                      onAssign={(id) => onAssignTask(task.id, id)}
+                      onUpdate={(updates) => onUpdateTask(task.id, updates)}
+                      onDelete={() => {
+                        const newSubSteps = step.subSteps!.map((ss, i) => 
+                          i === ssIdx ? { ...ss, tasks: ss.tasks.filter(t => t.id !== task.id) } : ss
+                        );
+                        onUpdateStep(step.id, { subSteps: newSubSteps });
+                      }}
+                      onToggleTimer={() => onToggleTimer(task.id)}
+                      activeTimerTaskId={activeTimerTaskId}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row items-center gap-2 pt-2">
+            <button 
+              onClick={(e) => { e.stopPropagation(); handleAddTask(); }}
+              className="flex-1 py-3 border border-dashed border-neutral-800 hover:border-neutral-600 rounded-sm font-mono text-xs uppercase tracking-wider text-neutral-400 hover:text-white transition-colors flex items-center justify-center gap-2 cursor-pointer w-full"
+            >
+              <Plus size={14} /> Append Directive Node
+            </button>
+            <button 
+              onClick={(e) => { e.stopPropagation(); handleAddSubTask(); }}
+              className="px-4 py-3 border border-dashed border-neutral-800 hover:border-neutral-600 rounded-sm font-mono text-xs uppercase tracking-wider text-neutral-400 hover:text-white transition-colors flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto"
+              title="Add a sub-task directive node with individual deadline"
+            >
+              <Plus size={14} /> Append Sub-Task Node
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -396,14 +396,18 @@ const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
     setIsAddModalOpen(false);
   };
 
-  // Permission: notes/events are editable and deletable by the creator (and agency leadership)
+  // Permission: strictly only the creator of the calendar note or admins can edit or delete calendar notes
   const canModifyEvent = (ev: CalendarEvent) => {
-    if (!ev.userId && !ev.createdBy && !ev.createdByName) return true;
-    const isCreator = ev.userId === currentUser.id || ev.createdBy === currentUser.id || ev.createdByName === currentUser.name;
     const normRole = (currentUser.role || '').toLowerCase();
-    const normDept = (currentUser.department || '').toLowerCase();
-    const isLeadership = normRole === 'super admin' || normRole === 'admin' || normRole === 'general manager' || normRole === 'gm' || normRole.includes('director') || normDept.includes('director');
-    return isCreator || isLeadership;
+    const isAdmin = normRole === 'super admin' || normRole === 'admin';
+    if (isAdmin) return true;
+
+    const isCreator = Boolean(
+      (ev.createdBy && ev.createdBy === currentUser.id) ||
+      (ev.userId && ev.userId === currentUser.id) ||
+      (ev.createdByName && currentUser.name && ev.createdByName.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+    );
+    return isCreator;
   };
 
   // Navigation handlers
@@ -946,7 +950,7 @@ const MonthlyCalendar: React.FC<MonthlyCalendarProps> = ({
                       <FileText size={14} />
                       CALENDAR NOTES & DIRECTIVES ({selectedDayItems.internalEvents.length})
                     </span>
-                    <span className="text-[10px] text-neutral-500">Editable & deletable by creator</span>
+                    <span className="text-[10px] text-neutral-500">Editable & deletable by note creator or admins</span>
                   </div>
 
                   <div className="space-y-3">
