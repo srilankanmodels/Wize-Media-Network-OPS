@@ -60,7 +60,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem('mw_current_user', JSON.stringify(currentUser));
+      const { password: _, ...safeUser } = currentUser;
+      localStorage.setItem('mw_current_user', JSON.stringify(safeUser));
     }
   }, [currentUser]);
   const [storageMode, setStorageMode] = useState<StorageMode>(isFirebaseEnabled ? 'cloud' : 'local');

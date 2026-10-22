@@ -10,6 +10,12 @@ interface LoginProps {
   staffList: StaffMember[];
 }
 
+// Security: Strip sensitive fields (passwords, private credentials) before storing in browser storage
+const sanitizeUserForStorage = (user: StaffMember): StaffMember => {
+  const { password: _, ...safeUser } = user;
+  return safeUser as StaffMember;
+};
+
 const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -57,8 +63,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
         details: `Google SSO Authentication as ${activeUser.role}`
       }).catch(err => console.debug('Audit log record error:', err));
 
-      localStorage.setItem('mw_current_user', JSON.stringify(activeUser));
-      onLogin(activeUser);
+      localStorage.setItem('mw_current_user', JSON.stringify(sanitizeUserForStorage(activeUser)));
+      onLogin(sanitizeUserForStorage(activeUser));
       return;
     }
 
@@ -112,8 +118,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
       details: `Google SSO Login: ${status === 'approved' ? 'Access Granted' : 'Pending Administrative Approval'}`
     }).catch(err => console.debug('Audit log record error:', err));
 
-    localStorage.setItem('mw_current_user', JSON.stringify(newStaffUser));
-    onLogin(newStaffUser);
+    localStorage.setItem('mw_current_user', JSON.stringify(sanitizeUserForStorage(newStaffUser)));
+    onLogin(sanitizeUserForStorage(newStaffUser));
   };
 
   useEffect(() => {
@@ -125,10 +131,13 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
     const errorDesc = params.get('error_description') || hashParams.get('error_description');
     if (errorDesc) {
       setError(decodeURIComponent(errorDesc.replace(/\+/g, ' ')).toUpperCase());
+      // Security: Strip error parameters from browser address bar immediately
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
 
     // Check if user is returning from Supabase Google OAuth redirect with active session
     if (isSupabaseEnabled && supabase) {
+      // 1. Check existing session immediately
       supabase.auth.getSession().then(({ data: { session }, error: sessionErr }) => {
         if (!isMounted) return;
         if (sessionErr) {
@@ -136,6 +145,10 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
           return;
         }
         if (session?.user && session.user.email) {
+          // Security: Clean up sensitive access_token/refresh_token/code from URL so they are never exposed to users
+          if (window.location.hash || window.location.search.includes('code=')) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
           handleSuccessfulGoogleUser({
             uid: session.user.id,
             email: session.user.email,
@@ -146,6 +159,28 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
       }).catch(err => {
         console.debug('Supabase session catch notice:', err);
       });
+
+      // 2. Subscribe to auth changes (captures async OAuth code exchange)
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (!isMounted) return;
+        if ((event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') && session?.user?.email) {
+          // Security: Clean up sensitive tokens from address bar
+          if (window.location.hash || window.location.search.includes('code=')) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+          await handleSuccessfulGoogleUser({
+            uid: session.user.id,
+            email: session.user.email,
+            displayName: session.user.user_metadata?.full_name || session.user.user_metadata?.name,
+            photoURL: session.user.user_metadata?.avatar_url || session.user.user_metadata?.picture
+          });
+        }
+      });
+
+      return () => {
+        isMounted = false;
+        subscription?.unsubscribe();
+      };
     }
 
     return () => {
@@ -200,8 +235,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
             details: `Authenticated via Supabase Auth as ${matchedUser.role}`
           }).catch(err => console.debug('Audit log record error:', err));
 
-          localStorage.setItem('mw_current_user', JSON.stringify(matchedUser));
-          onLogin(matchedUser);
+          localStorage.setItem('mw_current_user', JSON.stringify(sanitizeUserForStorage(matchedUser)));
+          onLogin(sanitizeUserForStorage(matchedUser));
           return;
         }
       }
@@ -223,8 +258,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
           details: `Local credential verification as ${user.role}`
         }).catch(err => console.debug('Audit log record error:', err));
 
-        localStorage.setItem('mw_current_user', JSON.stringify(user));
-        onLogin(user);
+        localStorage.setItem('mw_current_user', JSON.stringify(sanitizeUserForStorage(user)));
+        onLogin(sanitizeUserForStorage(user));
         return;
       } else {
         await recordAuditLog({
@@ -245,8 +280,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
       const user = staffList.find(s => s.email.toLowerCase() === cleanEmail.toLowerCase())
         || INITIAL_STAFF.find(s => s.email.toLowerCase() === cleanEmail.toLowerCase());
       if (user && (user.password === cleanPassword || cleanPassword === 'password123')) {
-        localStorage.setItem('mw_current_user', JSON.stringify(user));
-        onLogin(user);
+        localStorage.setItem('mw_current_user', JSON.stringify(sanitizeUserForStorage(user)));
+        onLogin(sanitizeUserForStorage(user));
       } else {
         setError('AUTHENTICATION PROTOCOL ERROR');
       }
@@ -260,7 +295,40 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
     setGoogleLoading(true);
 
     try {
-      // 1. Try Firebase Google Popup first (clean, instantaneous in-app popup)
+      // 1. Primary: Connect via Supabase Google OAuth (configured directly in database)
+      if (isSupabaseEnabled && supabase) {
+        const { error: authError } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: window.location.origin,
+            queryParams: {
+              access_type: 'offline',
+              prompt: 'select_account'
+            }
+          }
+        });
+        if (authError) {
+          console.warn('Supabase OAuth notice:', authError);
+          // Fall back to Firebase popup if Supabase returns error
+          if (isFirebaseEnabled && auth) {
+            const { user } = await signInWithGoogle();
+            if (user && user.email) {
+              await handleSuccessfulGoogleUser({
+                uid: user.uid,
+                email: user.email,
+                displayName: user.displayName,
+                photoURL: user.photoURL
+              });
+              setGoogleLoading(false);
+              return;
+            }
+          }
+          setShowGooglePicker(true);
+        }
+        return;
+      }
+
+      // 2. Secondary fallback: Firebase Google Popup
       if (isFirebaseEnabled && auth) {
         try {
           const { user } = await signInWithGoogle();
@@ -280,32 +348,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
             setGoogleLoading(false);
             return;
           }
-          // If unauthorized domain or other config, continue to fallback options
-          if (!isSupabaseEnabled) {
-            setShowGooglePicker(true);
-            setGoogleLoading(false);
-            return;
-          }
         }
-      }
-
-      // 2. Try Supabase Google OAuth redirect
-      if (isSupabaseEnabled && supabase) {
-        const { error: authError } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo: window.location.origin,
-            queryParams: {
-              access_type: 'offline',
-              prompt: 'consent'
-            }
-          }
-        });
-        if (authError) {
-          console.warn('Supabase OAuth notice:', authError);
-          setShowGooglePicker(true);
-        }
-        return;
       }
 
       // 3. Fallback to Google Account Selector
@@ -336,8 +379,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
         details: `Rapid demo access activated for ${user.role}`
       }).catch(err => console.debug('Audit log error:', err));
 
-      localStorage.setItem('mw_current_user', JSON.stringify(user));
-      onLogin(user);
+      localStorage.setItem('mw_current_user', JSON.stringify(sanitizeUserForStorage(user)));
+      onLogin(sanitizeUserForStorage(user));
     }
   };
 
