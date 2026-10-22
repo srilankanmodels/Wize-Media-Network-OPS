@@ -306,11 +306,15 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
     try {
       const activeClient = supabase || getSupabase();
 
+      const redirectUri = window.location.origin.endsWith('/') 
+        ? window.location.origin 
+        : `${window.location.origin}/`;
+
       // 100% Pure Supabase Google OAuth SSO (Redirects directly to Google Identity)
       const { data, error: authError } = await activeClient.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: redirectUri,
           queryParams: {
             access_type: 'offline',
             prompt: 'select_account'
