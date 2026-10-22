@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StaffMember, Role, AccountStatus } from '../types';
 import { Lock, Mail, ArrowRight, ShieldCheck, Hexagon, Loader2, Sparkles, X, User } from 'lucide-react';
-import { supabase, isSupabaseEnabled, recordAuditLog, createOrGetAccessRequest, saveOrUpdateUserProfile } from '../supabase';
+import { supabase, isSupabaseEnabled, getSupabase, recordAuditLog, createOrGetAccessRequest, saveOrUpdateUserProfile } from '../supabase';
 import { INITIAL_STAFF } from '../data';
 
 interface LoginProps {
@@ -304,13 +304,10 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
     setGoogleLoading(true);
 
     try {
-      if (!isSupabaseEnabled || !supabase) {
-        setError('SUPABASE CLOUD DATABASE CONNECTION NOT AVAILABLE');
-        return;
-      }
+      const activeClient = supabase || getSupabase();
 
       // 100% Pure Supabase Google OAuth SSO (Redirects directly to Google Identity)
-      const { data, error: authError } = await supabase.auth.signInWithOAuth({
+      const { data, error: authError } = await activeClient.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: window.location.origin,

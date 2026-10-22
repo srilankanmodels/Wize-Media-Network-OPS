@@ -2,48 +2,56 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { AuditLog, EmployeeAccessRequest, StaffMember, Role, AccountStatus, DEFAULT_DEPARTMENTS } from './types';
 import { canAssignRole, DEFAULT_ROLE_PERMISSIONS } from './utils/permissions';
 
-const getEnv = (key: string, fallback: string = ''): string => {
+// Canonical Supabase Project Credentials
+export const DEFAULT_SUPABASE_URL = 'https://hriyiiuxlnzpbzgucbga.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_xW0mHd93ynTyMwwlInNuFA_J-RYQJfB';
+
+const resolveCredentials = () => {
+  let url = DEFAULT_SUPABASE_URL;
+  let key = DEFAULT_SUPABASE_ANON_KEY;
+
   try {
-    if (typeof import.meta !== 'undefined' && (import.meta as any).env?.[key]) {
-      return (import.meta as any).env[key];
-    }
-    if (typeof process !== 'undefined' && process.env?.[key]) {
-      return process.env[key];
+    const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : null;
+    if (metaEnv) {
+      if (metaEnv.VITE_SUPABASE_URL) url = metaEnv.VITE_SUPABASE_URL;
+      if (metaEnv.VITE_SUPABASE_ANON_KEY) key = metaEnv.VITE_SUPABASE_ANON_KEY;
+      else if (metaEnv.VITE_SUPABASE_PUBLISHABLE_KEY) key = metaEnv.VITE_SUPABASE_PUBLISHABLE_KEY;
     }
   } catch {
-    // fallback
+    // fallback to defaults
   }
-  return fallback;
+  return { url, key };
 };
 
-const supabaseUrl = 
-  getEnv('VITE_SUPABASE_URL') || 
-  getEnv('SUPABASE_URL') || 
-  'https://hriyiiuxlnzpbzgucbga.supabase.co';
+const { url: supabaseUrl, key: supabaseAnonKey } = resolveCredentials();
 
-const supabaseAnonKey = 
-  getEnv('VITE_SUPABASE_ANON_KEY') || 
-  getEnv('VITE_SUPABASE_PUBLISHABLE_KEY') || 
-  getEnv('SUPABASE_PUBLISHABLE_KEY') || 
-  'sb_publishable_xW0mHd93ynTyMwwlInNuFA_J-RYQJfB';
+export function createSupabaseClient(): SupabaseClient {
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    }
+  });
+}
 
 let client: SupabaseClient | null = null;
 try {
-  if (supabaseUrl && supabaseAnonKey) {
-    client = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-      }
-    });
-    console.log("🟢 Supabase Protocol: Cloud Database Connected", supabaseUrl);
-  }
+  client = createSupabaseClient();
+  console.log("🟢 Supabase Protocol: Cloud Database Connected", supabaseUrl);
 } catch (err) {
-  console.error("🔴 Supabase Protocol: Initialization Failure", err);
+  console.error("🔴 Supabase Protocol: Initialization Notice", err);
 }
 
-export const supabase = client;
-export const isSupabaseEnabled = !!supabase;
+export const getSupabase = (): SupabaseClient => {
+  if (!client) {
+    client = createSupabaseClient();
+  }
+  return client;
+};
+
+export const supabase: SupabaseClient = client || createSupabaseClient();
+export const isSupabaseEnabled = true;
 
 /**
  * Extracts browser, operating system, and device telemetry
