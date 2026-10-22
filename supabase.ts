@@ -6,6 +6,12 @@ import { canAssignRole, DEFAULT_ROLE_PERMISSIONS } from './utils/permissions';
 export const DEFAULT_SUPABASE_URL = 'https://hriyiiuxlnzpbzgucbga.supabase.co';
 export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_xW0mHd93ynTyMwwlInNuFA_J-RYQJfB';
 
+const isValidHttpUrl = (str: any): boolean => {
+  if (typeof str !== 'string') return false;
+  const trimmed = str.trim();
+  return trimmed.startsWith('https://') || trimmed.startsWith('http://');
+};
+
 const resolveCredentials = () => {
   let url = DEFAULT_SUPABASE_URL;
   let key = DEFAULT_SUPABASE_ANON_KEY;
@@ -13,9 +19,16 @@ const resolveCredentials = () => {
   try {
     const metaEnv = typeof import.meta !== 'undefined' ? (import.meta as any).env : null;
     if (metaEnv) {
-      if (metaEnv.VITE_SUPABASE_URL) url = metaEnv.VITE_SUPABASE_URL;
-      if (metaEnv.VITE_SUPABASE_ANON_KEY) key = metaEnv.VITE_SUPABASE_ANON_KEY;
-      else if (metaEnv.VITE_SUPABASE_PUBLISHABLE_KEY) key = metaEnv.VITE_SUPABASE_PUBLISHABLE_KEY;
+      // Must be a valid URL starting with http:// or https:// (ignores literal placeholder 'VITE_SUPABASE_URL')
+      if (metaEnv.VITE_SUPABASE_URL && isValidHttpUrl(metaEnv.VITE_SUPABASE_URL)) {
+        url = metaEnv.VITE_SUPABASE_URL.trim();
+      }
+      // Must be a valid non-placeholder key
+      if (metaEnv.VITE_SUPABASE_ANON_KEY && typeof metaEnv.VITE_SUPABASE_ANON_KEY === 'string' && metaEnv.VITE_SUPABASE_ANON_KEY.trim().length > 10 && !metaEnv.VITE_SUPABASE_ANON_KEY.includes('•••') && metaEnv.VITE_SUPABASE_ANON_KEY !== 'VITE_SUPABASE_ANON_KEY') {
+        key = metaEnv.VITE_SUPABASE_ANON_KEY.trim();
+      } else if (metaEnv.VITE_SUPABASE_PUBLISHABLE_KEY && typeof metaEnv.VITE_SUPABASE_PUBLISHABLE_KEY === 'string' && metaEnv.VITE_SUPABASE_PUBLISHABLE_KEY.trim().length > 10) {
+        key = metaEnv.VITE_SUPABASE_PUBLISHABLE_KEY.trim();
+      }
     }
   } catch {
     // fallback to defaults
@@ -25,8 +38,10 @@ const resolveCredentials = () => {
 
 const { url: supabaseUrl, key: supabaseAnonKey } = resolveCredentials();
 
-export function createSupabaseClient(): SupabaseClient {
-  return createClient(supabaseUrl, supabaseAnonKey, {
+export function createSupabaseClient(targetUrl = supabaseUrl, targetKey = supabaseAnonKey): SupabaseClient {
+  const safeUrl = isValidHttpUrl(targetUrl) ? targetUrl : DEFAULT_SUPABASE_URL;
+  const safeKey = (targetKey && targetKey.length > 10) ? targetKey : DEFAULT_SUPABASE_ANON_KEY;
+  return createClient(safeUrl, safeKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
@@ -50,7 +65,8 @@ export const getSupabase = (): SupabaseClient => {
   return client;
 };
 
-export const supabase: SupabaseClient = client || createSupabaseClient();
+// Safe fallback ensuring top-level export never throws
+export const supabase: SupabaseClient = client || createSupabaseClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY);
 export const isSupabaseEnabled = true;
 
 /**
