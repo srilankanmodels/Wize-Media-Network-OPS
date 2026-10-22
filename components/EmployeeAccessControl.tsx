@@ -603,12 +603,15 @@ const EmployeeAccessControl: React.FC<EmployeeAccessControlProps> = ({
                   Assign Operational Department *
                 </label>
                 <select
-                  className="w-full p-2.5 bg-[#12141a] border border-neutral-800 focus:border-white font-mono text-xs text-white rounded-sm outline-none"
+                  className="w-full p-2.5 bg-[#12141a] border border-neutral-800 focus:border-white font-mono text-xs text-white rounded-sm outline-none cursor-pointer [color-scheme:dark]"
+                  style={{ colorScheme: 'dark' }}
                   value={selectedDept}
                   onChange={e => setSelectedDept(e.target.value)}
                 >
                   {AGENCY_DEPARTMENTS.map(dept => (
-                    <option key={dept} value={dept}>{dept}</option>
+                    <option key={dept} value={dept} style={{ backgroundColor: '#12141a', color: '#ffffff' }} className="bg-[#12141a] text-white py-1">
+                      {dept}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -619,14 +622,21 @@ const EmployeeAccessControl: React.FC<EmployeeAccessControlProps> = ({
                   Assign Agency Job Role *
                 </label>
                 <select
-                  className="w-full p-2.5 bg-[#12141a] border border-neutral-800 focus:border-white font-mono text-xs text-white rounded-sm outline-none"
+                  className="w-full p-2.5 bg-[#12141a] border border-neutral-800 focus:border-white font-mono text-xs text-white rounded-sm outline-none cursor-pointer [color-scheme:dark]"
+                  style={{ colorScheme: 'dark' }}
                   value={selectedRole}
                   onChange={e => setSelectedRole(e.target.value as Role)}
                 >
                   {ASSIGNABLE_ROLES.map(role => {
                     const disabled = !canAssignRole(currentUser.role, role);
                     return (
-                      <option key={role} value={role} disabled={disabled}>
+                      <option 
+                        key={role} 
+                        value={role} 
+                        disabled={disabled}
+                        style={{ backgroundColor: '#12141a', color: disabled ? '#737373' : '#ffffff' }}
+                        className={disabled ? "bg-[#12141a] text-neutral-500 py-1" : "bg-[#12141a] text-white py-1"}
+                      >
                         {role} {disabled ? '(Privilege Restricted)' : ''}
                       </option>
                     );
@@ -760,12 +770,15 @@ const EmployeeAccessControl: React.FC<EmployeeAccessControlProps> = ({
                   Department
                 </label>
                 <select
-                  className="w-full p-2.5 bg-[#12141a] border border-neutral-800 focus:border-white font-mono text-xs text-white rounded-sm outline-none"
+                  className="w-full p-2.5 bg-[#12141a] border border-neutral-800 focus:border-white font-mono text-xs text-white rounded-sm outline-none cursor-pointer [color-scheme:dark]"
+                  style={{ colorScheme: 'dark' }}
                   value={selectedDept}
                   onChange={e => setSelectedDept(e.target.value)}
                 >
                   {AGENCY_DEPARTMENTS.map(dept => (
-                    <option key={dept} value={dept}>{dept}</option>
+                    <option key={dept} value={dept} style={{ backgroundColor: '#12141a', color: '#ffffff' }} className="bg-[#12141a] text-white py-1">
+                      {dept}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -775,15 +788,25 @@ const EmployeeAccessControl: React.FC<EmployeeAccessControlProps> = ({
                   Job Role
                 </label>
                 <select
-                  className="w-full p-2.5 bg-[#12141a] border border-neutral-800 focus:border-white font-mono text-xs text-white rounded-sm outline-none"
+                  className="w-full p-2.5 bg-[#12141a] border border-neutral-800 focus:border-white font-mono text-xs text-white rounded-sm outline-none cursor-pointer [color-scheme:dark]"
+                  style={{ colorScheme: 'dark' }}
                   value={selectedRole}
                   onChange={e => setSelectedRole(e.target.value as Role)}
                 >
-                  {ASSIGNABLE_ROLES.map(role => (
-                    <option key={role} value={role} disabled={!canAssignRole(currentUser.role, role)}>
-                      {role} {!canAssignRole(currentUser.role, role) ? '(Restricted)' : ''}
-                    </option>
-                  ))}
+                  {ASSIGNABLE_ROLES.map(role => {
+                    const disabled = !canAssignRole(currentUser.role, role);
+                    return (
+                      <option 
+                        key={role} 
+                        value={role} 
+                        disabled={disabled}
+                        style={{ backgroundColor: '#12141a', color: disabled ? '#737373' : '#ffffff' }}
+                        className={disabled ? "bg-[#12141a] text-neutral-500 py-1" : "bg-[#12141a] text-white py-1"}
+                      >
+                        {role} {disabled ? '(Restricted)' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 

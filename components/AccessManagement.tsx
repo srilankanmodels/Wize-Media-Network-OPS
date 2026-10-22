@@ -175,13 +175,14 @@ const AccessManagement: React.FC<AccessManagementProps> = ({
 
         <div className="flex items-center gap-2 flex-wrap">
           <select
-            className="bg-[#12141a] border border-neutral-800 text-neutral-300 text-xs font-mono p-2 rounded-sm outline-none"
+            className="bg-[#12141a] border border-neutral-800 text-neutral-300 text-xs font-mono p-2 rounded-sm outline-none cursor-pointer [color-scheme:dark]"
+            style={{ colorScheme: 'dark' }}
             value={filterDepartment}
             onChange={e => setFilterDepartment(e.target.value)}
           >
-            <option value="ALL">All Departments</option>
+            <option value="ALL" style={{ backgroundColor: '#12141a', color: '#ffffff' }} className="bg-[#12141a] text-white py-1">All Departments</option>
             {departments.map(d => (
-              <option key={d} value={d}>{d}</option>
+              <option key={d} value={d} style={{ backgroundColor: '#12141a', color: '#ffffff' }} className="bg-[#12141a] text-white py-1">{d}</option>
             ))}
           </select>
         </div>

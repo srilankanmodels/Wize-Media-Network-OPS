@@ -900,14 +900,14 @@ const StaffManagement: React.FC<StaffManagementProps> = ({
                 </div>
                 <div>
                   <label className="block font-mono text-[10px] text-neutral-400 uppercase tracking-widest mb-1">Division *</label>
-                  <select value={formData.department} onChange={e => setFormData({...formData, department: e.target.value})} className="w-full px-4 py-2 bg-[#12141a] border border-neutral-800 font-mono text-xs text-white outline-none focus:border-white rounded-sm">
-                    {departments.map(d => <option key={d} value={d}>{d}</option>)}
+                  <select value={formData.department} onChange={e => setFormData({...formData, department: e.target.value})} className="w-full px-4 py-2 bg-[#12141a] border border-neutral-800 font-mono text-xs text-white outline-none focus:border-white rounded-sm cursor-pointer [color-scheme:dark]" style={{ colorScheme: 'dark' }}>
+                    {departments.map(d => <option key={d} value={d} style={{ backgroundColor: '#12141a', color: '#ffffff' }} className="bg-[#12141a] text-white py-1">{d}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block font-mono text-[10px] text-neutral-400 uppercase tracking-widest mb-1">Assigned Role *</label>
-                  <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full px-4 py-2 bg-[#12141a] border border-neutral-800 font-mono text-xs text-white outline-none focus:border-white rounded-sm">
-                    {roles.map(r => <option key={r} value={r}>{r}</option>)}
+                  <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full px-4 py-2 bg-[#12141a] border border-neutral-800 font-mono text-xs text-white outline-none focus:border-white rounded-sm cursor-pointer [color-scheme:dark]" style={{ colorScheme: 'dark' }}>
+                    {roles.map(r => <option key={r} value={r} style={{ backgroundColor: '#12141a', color: '#ffffff' }} className="bg-[#12141a] text-white py-1">{r}</option>)}
                   </select>
                 </div>
               </div>

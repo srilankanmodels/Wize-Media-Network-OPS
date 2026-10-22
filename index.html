@@ -13,6 +13,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
     <style>
       :root {
+        color-scheme: dark;
         --jarvis-primary: #00f0ff;
         --jarvis-primary-rgb: 0, 240, 255;
         --jarvis-secondary: #0284c7;
@@ -36,6 +37,23 @@
       }
       h1, h2, h3, h4, h5, h6, .font-heading { font-family: 'Space Grotesk', 'Inter', sans-serif; }
       .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+      /* Dark Theme Select and Dropdown Options Enforcement */
+      select {
+        color-scheme: dark !important;
+      }
+      select option {
+        background-color: #0e1017 !important;
+        color: #ffffff !important;
+      }
+      select option:checked {
+        background-color: #2563eb !important;
+        color: #ffffff !important;
+      }
+      select option:disabled {
+        background-color: #0e1017 !important;
+        color: #737373 !important;
+      }
       
       /* Dynamic JARVIS Cyber Grid Background */
       .bg-grid-pattern {

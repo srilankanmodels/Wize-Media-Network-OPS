@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Project, StaffMember, Role, PaymentUpdate, ServiceItem, Client, Todo, CalendarEvent, Channel, Message, Notification, AgencyProfile, LeaveRequest, LeaveApprovalTier, PettyCashTransaction, ProjectType, Task, DEFAULT_DEPARTMENTS, DEFAULT_ROLES, MeetingNote, Procedure } from './types';
+import { Project, StaffMember, Role, PaymentUpdate, ServiceItem, Client, Todo, CalendarEvent, Channel, Message, Notification, AgencyProfile, LeaveRequest, LeaveApprovalTier, PettyCashTransaction, ProjectType, Task, DEFAULT_DEPARTMENTS, DEFAULT_ROLES, MeetingNote, Procedure, EmployeeAccessRequest } from './types';
 import { INITIAL_PROJECTS as MOCK_PROJECTS, INITIAL_STAFF, SERVICE_CATALOG, INITIAL_CLIENTS, INITIAL_TODOS, INITIAL_EVENTS, INITIAL_CHANNELS, INITIAL_MESSAGES, INITIAL_NOTIFICATIONS, INITIAL_LEAVE_REQUESTS, INITIAL_PETTY_CASH, getTemplateSteps, AGENCY_PROCEDURES, INITIAL_MEETING_NOTES } from './data';
 import Dashboard from './components/Dashboard';
 import ProjectDetail from './components/ProjectDetail';
@@ -15,13 +15,14 @@ import MeetingNotes from './components/MeetingNotes';
 import Procedures from './components/Procedures';
 import MonthlyCalendar from './components/MonthlyCalendar';
 import AccessManagement from './components/AccessManagement';
+import EmployeeAccessControl from './components/EmployeeAccessControl';
 import WorkloadDashboard from './components/WorkloadDashboard';
 import Footer from './components/Footer';
 import PendingApprovalScreen from './components/PendingApprovalScreen';
 import RejectedAccessScreen from './components/RejectedAccessScreen';
 import SuspendedAccessScreen from './components/SuspendedAccessScreen';
 import { db, isFirebaseEnabled, auth, logoutGoogle } from './firebase';
-import { supabase, isSupabaseEnabled, loadAllAccessRequests, disconnectGoogleWorkspaceToken } from './supabase';
+import { supabase, isSupabaseEnabled, loadAllAccessRequests, disconnectGoogleWorkspaceToken, saveOrUpdateUserProfile, loadAllAppDataFromSupabase, syncToSupabase, deleteFromSupabase, syncAllAppDataToSupabase } from './supabase';
 import { doc, setDoc, onSnapshot, collection, updateDoc, addDoc, query, orderBy, limit, deleteDoc, getDocs, writeBatch } from 'firebase/firestore';
 import { LogOut, Users, FileText, Hexagon, Building2, Bell, Clock, DollarSign, UserCircle, MessageSquare, ListTodo, X, Building, Zap, Target, CheckCircle2, Plus, Calendar, Timer, AlertCircle, Archive, LayoutGrid, Heart, ChevronRight, ChevronLeft, Search, Check, Trash2, StickyNote, Send, Link as LinkIcon, Bookmark, Briefcase, ChevronDown, CloudOff, Cloud, RefreshCw, Database, ServerCrash, ShieldCheck, HardDrive, Cpu, Bot, CheckCircle, Compass, Circle, Menu, ArrowRight, Layers, Radio, RadioTower, Video, Mic, Globe, ShieldAlert, Lock, BarChart2, Sliders, Sparkles, Sun, Flame } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
@@ -64,7 +65,7 @@ const App: React.FC = () => {
       localStorage.setItem('mw_current_user', JSON.stringify(safeUser));
     }
   }, [currentUser]);
-  const [storageMode, setStorageMode] = useState<StorageMode>(isFirebaseEnabled ? 'cloud' : 'local');
+  const [storageMode, setStorageMode] = useState<StorageMode>((isSupabaseEnabled || isFirebaseEnabled) ? 'cloud' : 'local');
   
   // App-wide state
   const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
@@ -84,6 +85,8 @@ const App: React.FC = () => {
   const [meetingNotes, setMeetingNotes] = useState<MeetingNote[]>(INITIAL_MEETING_NOTES);
   const [procedures, setProcedures] = useState<Procedure[]>(AGENCY_PROCEDURES);
   const [lastRead, setLastRead] = useState<Record<string, string>>({});
+  const [accessRequests, setAccessRequests] = useState<EmployeeAccessRequest[]>([]);
+  const [accessSubTab, setAccessSubTab] = useState<'employees' | 'permissions'>('employees');
 
   // UI State
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -102,6 +105,37 @@ const App: React.FC = () => {
   const [jarvisTheme, setJarvisTheme] = useState<JarvisThemeConfig>(loadSavedJarvisTheme);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDailyReportSettingsOpen, setIsDailyReportSettingsOpen] = useState(false);
+  const [isSyncingDb, setIsSyncingDb] = useState(false);
+  const [dbSyncMessage, setDbSyncMessage] = useState<string | null>(null);
+
+  const handleSyncAllToDatabase = async () => {
+    setIsSyncingDb(true);
+    setDbSyncMessage(null);
+    try {
+      await syncAllAppDataToSupabase({
+        projects,
+        staff: staffList,
+        clients: clientList,
+        todos,
+        events,
+        notes: meetingNotes,
+        procedures,
+        leaves: leaveRequests,
+        pettyCash,
+        channels,
+        messages,
+        notifications,
+        agency: agencyProfile
+      });
+      setDbSyncMessage('DATABASE SYNC COMPLETE // ALL ENTITIES UPDATED');
+      setTimeout(() => setDbSyncMessage(null), 3500);
+    } catch (e: any) {
+      setDbSyncMessage('DATABASE NOTICE // LOCAL RETENTION ACTIVE');
+      setTimeout(() => setDbSyncMessage(null), 3500);
+    } finally {
+      setIsSyncingDb(false);
+    }
+  };
 
   useEffect(() => {
     applyJarvisThemeToDOM(jarvisTheme);
@@ -154,6 +188,99 @@ const App: React.FC = () => {
 
   useEffect(() => {
     loadLocalData();
+    if (isSupabaseEnabled && supabase) {
+      loadAllAppDataFromSupabase().then(cloudData => {
+        if (!cloudData) return;
+        
+        let hasData = false;
+        if (Array.isArray(cloudData.projects) && cloudData.projects.length > 0) {
+          setProjects(cloudData.projects);
+          saveLocalData('projects', cloudData.projects);
+          hasData = true;
+        }
+        if (Array.isArray(cloudData.staff) && cloudData.staff.length > 0) {
+          setStaffList(cloudData.staff);
+          saveLocalData('staff', cloudData.staff);
+          hasData = true;
+        }
+        if (Array.isArray(cloudData.clients) && cloudData.clients.length > 0) {
+          setClientList(cloudData.clients);
+          saveLocalData('clients', cloudData.clients);
+          hasData = true;
+        }
+        if (Array.isArray(cloudData.todos) && cloudData.todos.length > 0) {
+          setTodos(cloudData.todos);
+          saveLocalData('todos', cloudData.todos);
+          hasData = true;
+        }
+        if (Array.isArray(cloudData.events) && cloudData.events.length > 0) {
+          setEvents(cloudData.events);
+          saveLocalData('events', cloudData.events);
+          hasData = true;
+        }
+        const notesData = cloudData.notes || cloudData.meetingNotes;
+        if (Array.isArray(notesData) && notesData.length > 0) {
+          setMeetingNotes(notesData);
+          saveLocalData('notes', notesData);
+          hasData = true;
+        }
+        if (Array.isArray(cloudData.procedures) && cloudData.procedures.length > 0) {
+          setProcedures(cloudData.procedures);
+          saveLocalData('procedures', cloudData.procedures);
+          hasData = true;
+        }
+        const leavesData = cloudData.leaves || cloudData.leaveRequests;
+        if (Array.isArray(leavesData) && leavesData.length > 0) {
+          setLeaveRequests(leavesData);
+          saveLocalData('leaves', leavesData);
+          hasData = true;
+        }
+        if (Array.isArray(cloudData.pettyCash) && cloudData.pettyCash.length > 0) {
+          setPettyCash(cloudData.pettyCash);
+          saveLocalData('pettyCash', cloudData.pettyCash);
+          hasData = true;
+        }
+        if (Array.isArray(cloudData.channels) && cloudData.channels.length > 0) {
+          setChannels(cloudData.channels);
+          saveLocalData('channels', cloudData.channels);
+          hasData = true;
+        }
+        if (Array.isArray(cloudData.messages) && cloudData.messages.length > 0) {
+          setMessages(cloudData.messages);
+          saveLocalData('messages', cloudData.messages);
+          hasData = true;
+        }
+        if (Array.isArray(cloudData.notifications) && cloudData.notifications.length > 0) {
+          setNotifications(cloudData.notifications);
+          saveLocalData('notifications', cloudData.notifications);
+          hasData = true;
+        }
+        if (cloudData.agency && typeof cloudData.agency === 'object') {
+          setAgencyProfile(cloudData.agency);
+          saveLocalData('agency', cloudData.agency);
+          hasData = true;
+        }
+
+        // If newly connected database without datasets yet, seed initial agency datasets into Supabase
+        if (!hasData) {
+          syncAllAppDataToSupabase({
+            projects: MOCK_PROJECTS,
+            staff: INITIAL_STAFF,
+            clients: INITIAL_CLIENTS,
+            todos: INITIAL_TODOS,
+            events: INITIAL_EVENTS,
+            notes: INITIAL_MEETING_NOTES,
+            procedures: AGENCY_PROCEDURES,
+            leaves: INITIAL_LEAVE_REQUESTS,
+            pettyCash: INITIAL_PETTY_CASH,
+            channels: INITIAL_CHANNELS,
+            messages: INITIAL_MESSAGES,
+            notifications: INITIAL_NOTIFICATIONS,
+            agency: INITIAL_AGENCY_PROFILE
+          }).catch(e => console.debug('Initial Supabase dataset seed notice:', e));
+        }
+      }).catch(err => console.debug('Supabase initial cloud sync notice:', err));
+    }
   }, []);
 
   useEffect(() => {
@@ -197,6 +324,7 @@ const App: React.FC = () => {
   const currentBalance = useMemo(() => pettyCash.reduce((sum, tx) => sum + (tx.type === 'Income' ? tx.amount : -tx.amount), 0), [pettyCash]);
 
   const writeData = async (col: string, id: string, data: any, localArraySetter?: any, currentArray?: any[]) => {
+    let updatedArray: any[] | null = null;
     if (localArraySetter) {
       localArraySetter((prev: any[]) => {
         const base = Array.isArray(prev) ? prev : (currentArray || []);
@@ -208,24 +336,55 @@ const App: React.FC = () => {
         } else {
           newArr = [...base, { ...data, id }];
         }
+        updatedArray = newArr;
         saveLocalData(col, newArr);
         return newArr;
       });
     }
+
+    // 1. Supabase Database Realtime Write
+    if (isSupabaseEnabled && supabase) {
+      syncToSupabase(col, id, data).catch(err => console.debug(`Supabase write notice for ${col}:`, err));
+      if (updatedArray) {
+        supabase.from('app_data').upsert({
+          key: `dataset_${col}`,
+          value: updatedArray,
+          updated_at: new Date().toISOString()
+        }).then(() => {}, (err: any) => console.debug(`Supabase dataset update error for ${col}:`, err));
+      }
+    }
+
+    // 2. Firebase Cloud Write
     if (storageMode === 'cloud' && isFirebaseEnabled && db) { 
       try { await setDoc(doc(db, col, id), data); } catch (err) { console.error(`Cloud write failure:`, err); } 
     }
   };
 
   const deleteData = async (col: string, id: string, localArraySetter?: any, currentArray?: any[]) => {
+    let updatedArray: any[] | null = null;
     if (localArraySetter) {
       localArraySetter((prev: any[]) => {
         const base = Array.isArray(prev) ? prev : (currentArray || []);
         const newArr = base.filter(item => String(item.id) !== String(id));
+        updatedArray = newArr;
         saveLocalData(col, newArr);
         return newArr;
       });
     }
+
+    // 1. Supabase Database Delete
+    if (isSupabaseEnabled && supabase) {
+      deleteFromSupabase(col, id).catch(err => console.debug(`Supabase delete notice for ${col}:`, err));
+      if (updatedArray) {
+        supabase.from('app_data').upsert({
+          key: `dataset_${col}`,
+          value: updatedArray,
+          updated_at: new Date().toISOString()
+        }).then(() => {}, (err: any) => console.debug(`Supabase dataset update error for ${col}:`, err));
+      }
+    }
+
+    // 2. Firebase Cloud Delete
     if (storageMode === 'cloud' && isFirebaseEnabled && db) { 
       try { await deleteDoc(doc(db, col, id)); } catch (err) { console.error(`Cloud delete failure:`, err); } 
     }
@@ -233,10 +392,16 @@ const App: React.FC = () => {
 
   const handleSendMessage = async (text: string, channelId: string) => {
     if (!currentUser) return;
-    const userMessage: Message = { id: Date.now().toString(), channelId, text, senderId: currentUser.id, senderName: currentUser.name, senderAvatar: currentUser.avatarUrl, timestamp: new Date() };
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
-    saveLocalData('messages', updatedMessages);
+    const userMessage: Message = { 
+      id: Date.now().toString(), 
+      channelId, 
+      text, 
+      senderId: currentUser.id, 
+      senderName: currentUser.name, 
+      senderAvatar: currentUser.avatarUrl, 
+      timestamp: new Date() 
+    };
+    await writeData('messages', userMessage.id, userMessage, setMessages, messages);
   };
 
   const handleCreateChannel = async (name: string, type: 'public' | 'private' | 'project', description: string) => {
@@ -681,6 +846,8 @@ const App: React.FC = () => {
     if (currentUser?.id === staffId) {
       setCurrentUser(updated);
     }
+    // Sync permissions to Supabase employee profile
+    saveOrUpdateUserProfile(updated).catch(err => console.debug('Sync permissions notice:', err));
   };
 
   const PROJECT_TYPE_NODES = [
@@ -715,6 +882,23 @@ const App: React.FC = () => {
   // Rule: Theme settings & color customizer should be accessed ONLY by Super Admin and Admin
   const canAccessSettings = isSuperAdmin || isAdmin;
   const canAccessDailyReportSettings = isSuperAdmin || isAdmin || isGM || isDirector || isManager;
+  // Rule: Access Control & Employee Management console accessible to Super Admin and Admin
+  const canAccessAccessControl = isSuperAdmin || isAdmin;
+
+  const refreshAccessRequests = useCallback(async () => {
+    try {
+      const reqs = await loadAllAccessRequests();
+      setAccessRequests(reqs);
+    } catch (e) {
+      console.debug('Error loading access requests:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentUser && canAccessAccessControl) {
+      refreshAccessRequests();
+    }
+  }, [currentUser, canAccessAccessControl, refreshAccessRequests]);
 
   // Automated 7:00 PM EOD Daily Reporting Scheduler
   useEffect(() => {
@@ -919,13 +1103,13 @@ const App: React.FC = () => {
     items.push({ id: 'notes', label: 'Notes', code: '09' });
     items.push({ id: 'hr', label: 'HR', code: '10' });
 
-    // CRITICAL REQUIREMENT: "access control should only be displayed on the menu of super admin only. everyone else should not see access control."
-    if (isSuperAdmin) {
+    // Access control console for Super Admins and Admins
+    if (canAccessAccessControl) {
       items.push({ id: 'access', label: 'Access Control', code: '11' });
     }
 
     return items;
-  }, [canViewProjects, canAccessWorkload, canViewFinance, isSuperAdmin]);
+  }, [canViewProjects, canAccessWorkload, canViewFinance, canAccessAccessControl]);
 
   if (!currentUser) return <Login onLogin={setCurrentUser} staffList={staffList} />;
 
@@ -1022,6 +1206,20 @@ const App: React.FC = () => {
                 <span className="w-1.5 h-1.5 rounded-full bg-[var(--jarvis-primary)] shadow-[0_0_8px_var(--jarvis-primary)] animate-pulse"></span>
                 <span>{jarvisTheme.name.toUpperCase()}</span>
               </div>
+
+              {/* Live Database Sync Badge */}
+              {isSupabaseEnabled && (
+                <button
+                  type="button"
+                  onClick={handleSyncAllToDatabase}
+                  disabled={isSyncingDb}
+                  title="Click to force-sync all application records with Supabase database"
+                  className="hidden md:inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-950/40 border border-emerald-500/40 hover:border-emerald-400 rounded-full text-[10px] font-mono text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.2)] transition-all cursor-pointer"
+                >
+                  <Database size={11} className={isSyncingDb ? "animate-spin text-emerald-300" : "text-emerald-400"} />
+                  <span>{isSyncingDb ? 'SYNCING...' : 'DB // LIVE'}</span>
+                </button>
+              )}
             </div>
 
             {/* Center Numbered Navigation */}
@@ -1313,19 +1511,100 @@ const App: React.FC = () => {
           )}
 
           {view === 'access' && (
-            isSuperAdmin ? (
-              <AccessManagement
-                staffList={staffList}
-                onUpdateStaffPermissions={handleUpdateStaffPermissions}
-                currentUser={currentUser}
-                departments={departments}
-              />
+            canAccessAccessControl ? (
+              <div className="space-y-6">
+                {/* Header Navigation between Employee Access & Permissions */}
+                <div className="bg-[#0e0f14] border border-neutral-800 rounded-sm p-4 flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-sm bg-neutral-900 border border-neutral-700 flex items-center justify-center text-white">
+                      <ShieldCheck size={22} className="text-emerald-400" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="font-heading font-black text-sm tracking-wider uppercase text-white">
+                          Access Control & Employee Management
+                        </h2>
+                        <span className="px-2 py-0.5 rounded-sm bg-neutral-800 border border-neutral-700 text-[10px] font-mono text-neutral-300">
+                          {isSuperAdmin ? 'SUPER ADMIN PRIVILEGES' : 'ADMIN PRIVILEGES'}
+                        </span>
+                      </div>
+                      <p className="font-mono text-[11px] text-neutral-400">
+                        Review Google onboarding requests, activate employees, assign departments & roles, and adjust permissions.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAccessSubTab('employees')}
+                      className={`px-3.5 py-1.5 font-mono text-xs uppercase tracking-wider rounded-sm transition-all flex items-center gap-2 cursor-pointer ${
+                        accessSubTab === 'employees'
+                          ? 'bg-white text-black font-bold shadow-md'
+                          : 'bg-[#12141a] text-neutral-400 hover:text-white border border-neutral-800'
+                      }`}
+                    >
+                      <Users size={14} />
+                      Employees & Onboarding
+                      {accessRequests.filter(r => r.status === 'pending').length > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500 text-black font-black leading-none">
+                          {accessRequests.filter(r => r.status === 'pending').length}
+                        </span>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAccessSubTab('permissions')}
+                      className={`px-3.5 py-1.5 font-mono text-xs uppercase tracking-wider rounded-sm transition-all flex items-center gap-2 cursor-pointer ${
+                        accessSubTab === 'permissions'
+                          ? 'bg-white text-black font-bold shadow-md'
+                          : 'bg-[#12141a] text-neutral-400 hover:text-white border border-neutral-800'
+                      }`}
+                    >
+                      <Sliders size={14} />
+                      Permission Matrix
+                    </button>
+                  </div>
+                </div>
+
+                {accessSubTab === 'employees' ? (
+                  <EmployeeAccessControl
+                    requests={accessRequests}
+                    staffList={staffList}
+                    currentUser={currentUser}
+                    onRefreshData={refreshAccessRequests}
+                    onUpdateStaffList={async (updated) => {
+                      setStaffList(updated);
+                      saveLocalData('staff', updated);
+                      if (isSupabaseEnabled && supabase) {
+                        try {
+                          await supabase.from('app_data').upsert({
+                            key: 'dataset_staff',
+                            value: updated,
+                            updated_at: new Date().toISOString()
+                          });
+                        } catch (err) {
+                          console.debug('Sync staff error:', err);
+                        }
+                      }
+                    }}
+                  />
+                ) : (
+                  <AccessManagement
+                    staffList={staffList}
+                    onUpdateStaffPermissions={handleUpdateStaffPermissions}
+                    currentUser={currentUser}
+                    departments={departments}
+                  />
+                )}
+              </div>
             ) : (
               <div className="p-12 text-center bg-[#0e0f14] border border-rose-500/30 rounded-sm space-y-4 max-w-lg mx-auto mt-12">
                 <ShieldAlert size={48} className="text-rose-500 mx-auto" />
                 <h2 className="text-xl font-black uppercase text-white font-heading">Access Control Restricted</h2>
                 <p className="font-mono text-xs text-neutral-400">
-                  Access Control is exclusive to Super Admin authorization. You do not have clearance to modify security matrices.
+                  Access Control is exclusive to Administrator and Super Admin authorization. You do not have clearance to modify security matrices.
                 </p>
                 <button 
                   onClick={() => handleNav('dashboard')}
@@ -1448,9 +1727,9 @@ const App: React.FC = () => {
           {view === 'notes' && (
             <MeetingNotes 
               notes={meetingNotes}
-              onAddNote={(note) => writeData('meetingNotes', note.id, note, setMeetingNotes, meetingNotes)}
-              onDeleteNote={(id) => deleteData('meetingNotes', id, setMeetingNotes, meetingNotes)}
-              onUpdateNote={(note) => writeData('meetingNotes', note.id, note, setMeetingNotes, meetingNotes)}
+              onAddNote={(note) => writeData('notes', note.id, note, setMeetingNotes, meetingNotes)}
+              onDeleteNote={(id) => deleteData('notes', id, setMeetingNotes, meetingNotes)}
+              onUpdateNote={(note) => writeData('notes', note.id, note, setMeetingNotes, meetingNotes)}
               projects={projects}
               staffList={staffList}
               currentUserName={currentUser.name}
@@ -1458,7 +1737,7 @@ const App: React.FC = () => {
             />
           )}
         </main>
-        <Footer agencyProfile={agencyProfile} meetingNotes={meetingNotes} projects={projects} onAddNote={(text, pid, pname, saved) => writeData('meetingNotes', `note-${Date.now()}`, { id: `note-${Date.now()}`, title: text.split('\n')[0].substring(0, 30), text, projectId: pid, projectName: pname, isSavedToWize: saved, timestamp: new Date(), author: currentUser.name, category: 'Internal' }, setMeetingNotes, meetingNotes)} onDeleteNote={(id) => deleteData('meetingNotes', id, setMeetingNotes, meetingNotes)} currentUserName={currentUser.name} />
+        <Footer agencyProfile={agencyProfile} meetingNotes={meetingNotes} projects={projects} onAddNote={(text, pid, pname, saved) => writeData('notes', `note-${Date.now()}`, { id: `note-${Date.now()}`, title: text.split('\n')[0].substring(0, 30), text, projectId: pid, projectName: pname, isSavedToWize: saved, timestamp: new Date(), author: currentUser.name, category: 'Internal' }, setMeetingNotes, meetingNotes)} onDeleteNote={(id) => deleteData('notes', id, setMeetingNotes, meetingNotes)} currentUserName={currentUser.name} />
       </div>
 
       {isSidebarOpen && (
@@ -1546,6 +1825,58 @@ const App: React.FC = () => {
                           </button>
                         )}
 
+                        {/* Database Telemetry & Cloud Sync Panel */}
+                        {isSupabaseEnabled && (
+                          <div className="p-4 rounded-sm border border-emerald-500/30 bg-emerald-950/20 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Database size={15} className="text-emerald-400" />
+                                <span className="font-heading font-black text-xs uppercase tracking-wider text-white">
+                                  SUPABASE CLOUD DATABASE
+                                </span>
+                              </div>
+                              <span className="px-1.5 py-0.5 rounded-xs bg-emerald-500/10 border border-emerald-500/30 text-[9px] font-mono text-emerald-400">
+                                ACTIVE
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 font-mono text-[10px] text-neutral-400">
+                              <div className="bg-[#12141a] p-2 border border-neutral-800 rounded-xs">
+                                <span className="text-neutral-500 block">CAMPAIGNS</span>
+                                <span className="text-white font-bold">{projects.length} Registered</span>
+                              </div>
+                              <div className="bg-[#12141a] p-2 border border-neutral-800 rounded-xs">
+                                <span className="text-neutral-500 block">CLIENTS</span>
+                                <span className="text-white font-bold">{clientList.length} Portals</span>
+                              </div>
+                              <div className="bg-[#12141a] p-2 border border-neutral-800 rounded-xs">
+                                <span className="text-neutral-500 block">PERSONNEL</span>
+                                <span className="text-white font-bold">{staffList.length} Staff</span>
+                              </div>
+                              <div className="bg-[#12141a] p-2 border border-neutral-800 rounded-xs">
+                                <span className="text-neutral-500 block">DIRECTIVES</span>
+                                <span className="text-white font-bold">{todos.length} Todos</span>
+                              </div>
+                            </div>
+
+                            {dbSyncMessage && (
+                              <div className="p-2 bg-emerald-950 border border-emerald-500/50 text-emerald-300 font-mono text-[10px] rounded-xs text-center">
+                                {dbSyncMessage}
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={handleSyncAllToDatabase}
+                              disabled={isSyncingDb}
+                              className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black font-mono text-xs uppercase font-black tracking-wider rounded-sm transition-all flex items-center justify-center gap-2 cursor-pointer shadow-md"
+                            >
+                              <RefreshCw size={13} className={isSyncingDb ? "animate-spin" : ""} />
+                              {isSyncingDb ? 'SYNCHRONIZING...' : 'FORCE DATABASE SYNC & BACKUP'}
+                            </button>
+                          </div>
+                        )}
+
                         <div className="space-y-3">
                             <h3 className="font-mono text-[10px] uppercase text-neutral-400 tracking-[0.3em] px-1">System Modules</h3>
                             <div className="grid grid-cols-1 gap-2.5">
@@ -1560,8 +1891,7 @@ const App: React.FC = () => {
                                     { id: 'clients', code: '08', icon: Building2, label: 'Client Portals', desc: 'Accounts & brand contacts', visible: true },
                                     { id: 'notes', code: '09', icon: StickyNote, label: 'Meeting Intelligence', desc: 'Decision minutes & action items', visible: true },
                                     { id: 'hr', code: '10', icon: Heart, label: 'HR & Personnel', desc: 'Leave tracking, approvals & roster', visible: true },
-                                    // CRITICAL: access control should only be displayed on the menu of super admin only. everyone else should not see access control.
-                                    { id: 'access', code: '11', icon: ShieldCheck, label: 'Access Control', desc: 'Super admin security matrix & permissions', visible: isSuperAdmin }
+                                    { id: 'access', code: '11', icon: ShieldCheck, label: 'Access Control', desc: 'Admin & Super Admin security matrix & employee onboarding', visible: canAccessAccessControl }
                                 ].filter(mod => mod.visible).map(mod => (
                                     <button 
                                         key={mod.id} 

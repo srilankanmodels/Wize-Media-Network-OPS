@@ -346,6 +346,8 @@ export async function syncToSupabase(collectionName: string, id: string, data: a
         text: data.text || '',
         created_at: data.timestamp ? new Date(data.timestamp).toISOString() : new Date().toISOString()
       });
+    } else if (collectionName === 'staff') {
+      await saveOrUpdateUserProfile(data);
     }
 
     await supabase.from('app_data').upsert({
@@ -370,6 +372,8 @@ export async function deleteFromSupabase(collectionName: string, id: string): Pr
       await supabase.from('clients').delete().eq('id', id);
     } else if (collectionName === 'messages') {
       await supabase.from('messages').delete().eq('id', id);
+    } else if (collectionName === 'staff') {
+      await supabase.from('employee_profiles').delete().eq('id', id);
     }
     await supabase.from('app_data').delete().eq('key', `${collectionName}_${id}`);
   } catch (e) {
@@ -1001,6 +1005,48 @@ export async function bootstrapFirstSuperAdmin(
 // =========================================================================
 // GOOGLE WORKSPACE PROTOCOL VIA SUPABASE OAUTH (CALENDAR, GMAIL, DRIVE)
 // =========================================================================
+
+/**
+ * Automatically saves or updates the authenticated employee profile in Supabase database.
+ * Upserts into `employee_profiles` table and updates `dataset_staff` in `app_data`.
+ */
+export async function saveOrUpdateUserProfile(user: StaffMember, authUserId?: string): Promise<void> {
+  if (!supabase) return;
+  try {
+    const payload: any = {
+      id: user.id || `staff_${Date.now()}`,
+      auth_user_id: authUserId || user.authUserId || user.id,
+      full_name: user.name,
+      email: user.email.toLowerCase(),
+      avatar_url: user.avatarUrl || null,
+      department_name: user.department || 'General',
+      role_name: String(user.role),
+      account_status: user.accountStatus || 'approved',
+      permissions: user.permissions || {},
+      updated_at: new Date().toISOString()
+    };
+
+    // Upsert into dedicated Supabase employee_profiles table
+    await supabase.from('employee_profiles').upsert(payload, { onConflict: 'email' });
+
+    // Sync to dataset_staff backup in app_data
+    const { data } = await supabase.from('app_data').select('value').eq('key', 'dataset_staff').maybeSingle();
+    let staff: StaffMember[] = Array.isArray(data?.value) ? data.value : [];
+    const idx = staff.findIndex(s => s.email.toLowerCase() === user.email.toLowerCase());
+    if (idx > -1) {
+      staff[idx] = { ...staff[idx], ...user };
+    } else {
+      staff.push(user);
+    }
+    await supabase.from('app_data').upsert({
+      key: 'dataset_staff',
+      value: staff,
+      updated_at: new Date().toISOString()
+    });
+  } catch (e) {
+    console.debug('saveOrUpdateUserProfile notice:', e);
+  }
+}
 
 export const GOOGLE_WORKSPACE_SCOPES = {
   CALENDAR: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
