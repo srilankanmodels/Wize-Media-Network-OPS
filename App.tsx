@@ -326,6 +326,66 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [projects, staffList]);
 
+  // Automated synchronization: ensure all assigned project tasks are represented in assignees' todo lists
+  useEffect(() => {
+    if (!projects || projects.length === 0) return;
+
+    const todoMap = new Map<string, Todo>();
+    todos.forEach(t => {
+      if (t.projectId && t.taskId) {
+        todoMap.set(`${t.projectId}-${t.taskId}`, t);
+      }
+    });
+
+    const newTodosToAdd: Todo[] = [];
+    projects.forEach(p => {
+      (p.steps || []).forEach(s => {
+        const stepTasks = [...(s.tasks || []), ...(s.subSteps?.flatMap(ss => ss.tasks) || [])];
+        stepTasks.forEach(t => {
+          if (t.assignedTo) {
+            const key = `${p.id}-${t.id}`;
+            const existing = todoMap.get(key);
+            const isDone = !!(p.tasksCompleted && p.tasksCompleted[t.id]) || !!t.completed;
+            const effDeadline = t.deadline || s.deadline || p.dueDate;
+            const deadlineStr = effDeadline ? (typeof effDeadline === 'string' ? effDeadline : new Date(effDeadline).toISOString()) : undefined;
+
+            if (!existing) {
+              const staff = staffList.find(st => st.id === t.assignedTo);
+              newTodosToAdd.push({
+                id: `todo-task-${p.id}-${t.id}`,
+                text: `[${p.jobNumber || p.projectName}] ${t.text}`,
+                completed: isDone,
+                userId: t.assignedTo,
+                assignedTo: t.assignedTo,
+                assignedToName: staff?.name,
+                assignedToAvatar: staff?.avatarUrl,
+                isDaily: true,
+                deadline: deadlineStr,
+                createdAt: new Date().toISOString(),
+                projectId: p.id,
+                projectName: p.projectName,
+                projectJobNumber: p.jobNumber,
+                stepId: s.id,
+                taskId: t.id
+              });
+            }
+          }
+        });
+      });
+    });
+
+    if (newTodosToAdd.length > 0) {
+      setTodos(prev => {
+        const existingIds = new Set(prev.map(td => td.id));
+        const filteredNew = newTodosToAdd.filter(td => !existingIds.has(td.id));
+        if (filteredNew.length === 0) return prev;
+        const combined = [...prev, ...filteredNew];
+        saveLocalData('todos', combined);
+        return combined;
+      });
+    }
+  }, [projects, staffList, todos]);
+
   const activeProject = useMemo(() => projects.find(p => p.id === activeProjectId) || null, [projects, activeProjectId]);
   const filteredBriefs = useMemo(() => {
     if (!briefSearchQuery.trim()) return projects;
@@ -337,7 +397,18 @@ const App: React.FC = () => {
       (p.type && p.type.toLowerCase().includes(q))
     );
   }, [projects, briefSearchQuery]);
-  const sortedTodos = useMemo(() => currentUser ? todos.filter(t => t.userId === currentUser.id).sort((a, b) => { if (a.completed && !b.completed) return 1; if (!a.completed && b.completed) return -1; return 0; }) : [], [todos, currentUser]);
+  const sortedTodos = useMemo(() => {
+    if (!currentUser) return [];
+    return todos.filter(t => 
+      t.userId === currentUser.id || 
+      t.assignedTo === currentUser.id || 
+      (t.taggedStaffIds && t.taggedStaffIds.includes(currentUser.id))
+    ).sort((a, b) => { 
+      if (a.completed && !b.completed) return 1; 
+      if (!a.completed && b.completed) return -1; 
+      return 0; 
+    });
+  }, [todos, currentUser]);
   const currentBalance = useMemo(() => pettyCash.reduce((sum, tx) => sum + (tx.type === 'Income' ? tx.amount : -tx.amount), 0), [pettyCash]);
 
   const writeData = async (col: string, id: string, data: any, localArraySetter?: any, currentArray?: any[]) => {
@@ -597,9 +668,94 @@ const App: React.FC = () => {
     setQuickTodoText('');
   };
 
+  const handleSyncTaskAssignmentToTodo = useCallback(async (params: {
+    taskId: string;
+    assigneeId: string;
+    taskText: string;
+    deadline?: Date | string;
+    projectId: string;
+    projectName: string;
+    projectJobNumber?: string;
+    stepId?: number;
+    isCompleted?: boolean;
+  }) => {
+    const { taskId, assigneeId, taskText, deadline, projectId, projectName, projectJobNumber, stepId, isCompleted = false } = params;
+    const todoId = `todo-task-${projectId}-${taskId}`;
+
+    if (!assigneeId) {
+      // If task was unassigned, remove the generated todo entry from todos list
+      const existing = todos.find(t => t.id === todoId || (t.projectId === projectId && t.taskId === taskId));
+      if (existing) {
+        await deleteData('todos', existing.id, setTodos, todos);
+      }
+      return;
+    }
+
+    const assignedMember = (staffList || []).find(s => s.id === assigneeId);
+    const deadlineStr = deadline ? (typeof deadline === 'string' ? deadline : new Date(deadline).toISOString()) : undefined;
+    const existingTodo = todos.find(t => t.id === todoId || (t.projectId === projectId && t.taskId === taskId));
+
+    const updatedTodo: Todo = {
+      id: todoId,
+      text: `[${projectJobNumber || projectName}] ${taskText}`,
+      completed: isCompleted,
+      userId: assigneeId, // Assignee owns this todo in their personal and daily list
+      assignedTo: assigneeId,
+      assignedToName: assignedMember?.name,
+      assignedToAvatar: assignedMember?.avatarUrl,
+      createdById: currentUser?.id,
+      createdByName: currentUser?.name || 'Authorized Lead',
+      isDaily: true,
+      deadline: deadlineStr,
+      createdAt: existingTodo?.createdAt || new Date().toISOString(),
+      projectId,
+      projectName,
+      projectJobNumber,
+      stepId,
+      taskId
+    };
+
+    await writeData('todos', todoId, updatedTodo, setTodos, todos);
+  }, [todos, staffList, currentUser]);
+
   const handleToggleTodo = async (id: string) => {
     const todo = todos.find(t => t.id === id);
-    if (todo) { const updated = { ...todo, completed: !todo.completed }; await writeData('todos', id, updated, setTodos, todos); }
+    if (!todo) return;
+    const nextCompleted = !todo.completed;
+    const updated = { ...todo, completed: nextCompleted };
+    await writeData('todos', id, updated, setTodos, todos);
+
+    // If this todo is linked to a project task, automatically sync the project's task status
+    if (todo.projectId && todo.taskId) {
+      const proj = projects.find(p => p.id === todo.projectId);
+      if (proj) {
+        const newTasksCompleted = { ...(proj.tasksCompleted || {}) };
+        newTasksCompleted[todo.taskId] = nextCompleted;
+
+        const updatedSteps = proj.steps.map(s => ({
+          ...s,
+          tasks: s.tasks.map(t => t.id === todo.taskId ? { ...t, completed: nextCompleted, completedAt: nextCompleted ? new Date().toISOString() : undefined } : t),
+          subSteps: s.subSteps ? s.subSteps.map(ss => ({
+            ...ss,
+            tasks: ss.tasks.map(t => t.id === todo.taskId ? { ...t, completed: nextCompleted, completedAt: nextCompleted ? new Date().toISOString() : undefined } : t)
+          })) : undefined
+        }));
+
+        const allTasks = updatedSteps.flatMap(s => [...s.tasks, ...(s.subSteps?.flatMap(ss => ss.tasks) || [])]);
+        const total = allTasks.length;
+        const completedCount = allTasks.filter(t => newTasksCompleted[t.id] || t.completed).length;
+        const prog = total === 0 ? 0 : Math.round((completedCount / total) * 100);
+
+        const updatedProj: Project = {
+          ...proj,
+          steps: updatedSteps,
+          tasksCompleted: newTasksCompleted,
+          progress: prog,
+          lastUpdated: new Date()
+        };
+        await writeData('projects', updatedProj.id, updatedProj, setProjects, projects);
+      }
+    }
   };
 
   const handleLogout = async () => {
@@ -1497,6 +1653,7 @@ const App: React.FC = () => {
                 onUpdateProject={handleUpdateProject} 
                 onAddNotification={(notif) => writeData('notifications', notif.id, notif, setNotifications, notifications)}
                 onSelectProject={(p) => { setActiveProjectId(p.id); setView('detail'); }} 
+                onAssignTaskToTodo={handleSyncTaskAssignmentToTodo}
               />
             ) : (
               <div className="p-12 text-center bg-[#0e0f14] border border-rose-500/30 rounded-sm space-y-4 max-w-lg mx-auto mt-12">
@@ -1651,7 +1808,13 @@ const App: React.FC = () => {
               activeChannelId={currentChannelId || activeProject.channelId || 'ch-1'} 
               agencyProfile={agencyProfile} 
               onUpdatePayment={handleUpdatePayment} 
-              onAddNotification={() => {}} 
+              onAddNotification={(notif) => {
+                const nid = `notif-${Date.now()}`;
+                writeData('notifications', nid, { ...notif, id: nid, timestamp: new Date(), read: false }, setNotifications, notifications);
+              }} 
+              todos={todos}
+              onUpdateTodo={(todo) => writeData('todos', todo.id, todo, setTodos, todos)}
+              onAssignTaskToTodo={handleSyncTaskAssignmentToTodo}
             />
           )}
 

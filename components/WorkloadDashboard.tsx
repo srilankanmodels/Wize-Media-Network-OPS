@@ -15,6 +15,17 @@ interface WorkloadDashboardProps {
   onUpdateProject: (updatedProject: Project) => void;
   onAddNotification?: (notif: any) => void;
   onSelectProject?: (project: Project) => void;
+  onAssignTaskToTodo?: (params: {
+    taskId: string;
+    assigneeId: string;
+    taskText: string;
+    deadline?: Date | string;
+    projectId: string;
+    projectName: string;
+    projectJobNumber?: string;
+    stepId?: number;
+    isCompleted?: boolean;
+  }) => void;
 }
 
 interface EnrichedTask extends Task {
@@ -32,7 +43,8 @@ const WorkloadDashboard: React.FC<WorkloadDashboardProps> = ({
   currentUser,
   onUpdateProject,
   onAddNotification,
-  onSelectProject
+  onSelectProject,
+  onAssignTaskToTodo
 }) => {
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>('ALL');
   const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState<string>('ALL');
@@ -223,6 +235,21 @@ const WorkloadDashboard: React.FC<WorkloadDashboardProps> = ({
     };
 
     onUpdateProject(updatedProject);
+
+    // Auto-sync reallocated task to the new assignee's to-do list
+    if (onAssignTaskToTodo) {
+      onAssignTaskToTodo({
+        taskId: taskToReassign.id,
+        assigneeId: targetStaffId,
+        taskText: taskToReassign.text,
+        deadline: taskToReassign.deadline,
+        projectId: projectToUpdate.id,
+        projectName: projectToUpdate.projectName,
+        projectJobNumber: projectToUpdate.jobNumber,
+        stepId: taskToReassign.stepId,
+        isCompleted: taskToReassign.completed
+      });
+    }
 
     // Notify new assignee
     if (onAddNotification) {

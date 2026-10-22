@@ -474,6 +474,11 @@ export interface Todo {
   assignedToName?: string;
   assignedToAvatar?: string;
   createdAt?: Date | string;
+  projectId?: string;
+  projectName?: string;
+  projectJobNumber?: string;
+  stepId?: number;
+  taskId?: string;
 }
 
 export interface CalendarEvent {

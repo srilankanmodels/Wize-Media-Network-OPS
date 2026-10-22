@@ -23,12 +23,25 @@ interface ProjectDetailProps {
   agencyProfile: AgencyProfile;
   onUpdatePayment: (update: PaymentUpdate) => void;
   onAddNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => void;
+  todos?: any[];
+  onUpdateTodo?: (todo: any) => void;
+  onAssignTaskToTodo?: (params: {
+    taskId: string;
+    assigneeId: string;
+    taskText: string;
+    deadline?: Date | string;
+    projectId: string;
+    projectName: string;
+    projectJobNumber?: string;
+    stepId?: number;
+    isCompleted?: boolean;
+  }) => void;
 }
 
 const ProjectDetail: React.FC<ProjectDetailProps> = ({ 
     project, onBack, onUpdateProject, staffList, serviceCatalog, onUpdateCatalog, currentUser,
     channels, messages, onSendMessage, onSelectChannel, activeChannelId, agencyProfile, onUpdatePayment,
-    onAddNotification
+    onAddNotification, todos, onUpdateTodo, onAssignTaskToTodo
 }) => {
   const [activeTab, setActiveTab] = useState<'workflow' | 'payments' | 'quotations' | 'documents'>('workflow');
   const [paymentForm, setPaymentForm] = useState({ amount: '', type: 'Advance', method: 'Transfer', notes: '' });
@@ -423,12 +436,16 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
   const handleAssignTask = (tid: string, sid: string) => {
     let taskText = '';
     let taskDeadline: any = undefined;
+    let taskCompleted = false;
+    let stepIdForTask = 1;
 
     const newSteps = project.steps.map(s => {
       const updatedTasks = s.tasks.map(t => {
         if (t.id === tid) {
           taskText = t.text;
           taskDeadline = t.deadline || s.deadline || project.dueDate;
+          taskCompleted = !!(project.tasksCompleted && project.tasksCompleted[t.id]) || !!t.completed;
+          stepIdForTask = s.id;
           return { ...t, assignedTo: sid };
         }
         return t;
@@ -440,6 +457,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
           if (t.id === tid) {
             taskText = t.text;
             taskDeadline = t.deadline || s.deadline || project.dueDate;
+            taskCompleted = !!(project.tasksCompleted && project.tasksCompleted[t.id]) || !!t.completed;
+            stepIdForTask = s.id;
             return { ...t, assignedTo: sid };
           }
           return t;
@@ -454,6 +473,21 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     });
     
     onUpdateProject({ ...project, steps: newSteps });
+
+    // Automatically sync assigned task to the assignee's to-do list
+    if (onAssignTaskToTodo) {
+      onAssignTaskToTodo({
+        taskId: tid,
+        assigneeId: sid,
+        taskText,
+        deadline: taskDeadline,
+        projectId: project.id,
+        projectName: project.projectName,
+        projectJobNumber: project.jobNumber,
+        stepId: stepIdForTask,
+        isCompleted: taskCompleted
+      });
+    }
 
     if (sid && sid !== currentUser.id) {
         onAddNotification({
@@ -693,6 +727,16 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                     const total = allTasks.length;
                     const completedCount = allTasks.filter(t => newTasks[t.id]).length;
                     const prog = total === 0 ? 0 : Math.round((completedCount / total) * 100);
+
+                    // Auto-sync completed state to the assignee's Todo item
+                    if (onUpdateTodo && todos) {
+                      const todoId = `todo-task-${project.id}-${tid}`;
+                      const foundTodo = todos.find(td => td.id === todoId || (td.projectId === project.id && td.taskId === tid));
+                      if (foundTodo) {
+                        onUpdateTodo({ ...foundTodo, completed: newTasks[tid] });
+                      }
+                    }
+
                     onUpdateProject({ ...project, tasksCompleted: newTasks, progress: prog, lastUpdated: new Date() });
                   }}
                   comments={[]}
@@ -711,6 +755,20 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                         tasks: ss.tasks.map(t => t.id === tid ? {...t, ...updates} : t)
                       })) : undefined
                     }));
+
+                    // Auto-sync text and deadline updates to the assignee's Todo item
+                    if (onUpdateTodo && todos) {
+                      const todoId = `todo-task-${project.id}-${tid}`;
+                      const foundTodo = todos.find(td => td.id === todoId || (td.projectId === project.id && td.taskId === tid));
+                      if (foundTodo) {
+                        onUpdateTodo({
+                          ...foundTodo,
+                          ...(updates.text ? { text: `[${project.jobNumber || project.projectName}] ${updates.text}` } : {}),
+                          ...(updates.deadline !== undefined ? { deadline: updates.deadline ? (typeof updates.deadline === 'string' ? updates.deadline : new Date(updates.deadline).toISOString()) : undefined } : {})
+                        });
+                      }
+                    }
+
                     onUpdateProject({ ...project, steps: newSteps });
                   }}
                   onUpdateStep={(sid, updates) => {

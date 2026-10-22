@@ -94,7 +94,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [isTimerPickerOpen, setIsTimerPickerOpen] = useState(false);
 
   // Active Directives & To-Do List controls & postponement states
-  const [directiveFilter, setDirectiveFilter] = useState<'DAILY' | 'ALL' | 'CRITICAL' | 'OVERDUE' | 'PERSONAL' | 'TRACKING' | 'POSTPONED'>('DAILY');
+  const [directiveFilter, setDirectiveFilter] = useState<'DAILY' | 'COMPLETED' | 'ALL' | 'CRITICAL' | 'OVERDUE' | 'PERSONAL' | 'TRACKING' | 'POSTPONED'>('DAILY');
   const [directiveSort, setDirectiveSort] = useState<'DEADLINE' | 'PRIORITY' | 'PROJECT'>('DEADLINE');
   const [newQuickTodo, setNewQuickTodo] = useState('');
   const [quickTodoDeadline, setQuickTodoDeadline] = useState('');
@@ -401,6 +401,85 @@ const Dashboard: React.FC<DashboardProps> = ({
     return myPersonalTodos.filter(t => t.isDaily !== false || isDueTodayOrOverdue(t.deadline));
   }, [myPersonalTodos]);
 
+  // Dedicated Completed Tasks List (for COMPLETED tab next to DAILY tab)
+  const allCompletedItems = useMemo(() => {
+    const items: {
+      id: string;
+      text: string;
+      completed: boolean;
+      deadline?: Date | string;
+      completedAt?: Date | string;
+      projectName?: string;
+      projectJobNumber?: string;
+      projectId?: string;
+      stepId?: number;
+      stepTitle?: string;
+      isProjectTask?: boolean;
+      taskId?: string;
+      sourceTodoId?: string;
+      isDaily?: boolean;
+      createdByName?: string;
+      createdById?: string;
+    }[] = [];
+
+    const seenTaskKeys = new Set<string>();
+
+    // 1. From personal and assigned todos that are completed
+    (myPersonalTodos || []).filter(t => t.completed).forEach(t => {
+      const taskKey = t.projectId && t.taskId ? `${t.projectId}-${t.taskId}` : t.id;
+      seenTaskKeys.add(taskKey);
+      items.push({
+        id: t.id,
+        text: t.text,
+        completed: true,
+        deadline: t.deadline,
+        projectName: t.projectName,
+        projectJobNumber: t.projectJobNumber,
+        projectId: t.projectId,
+        stepId: t.stepId,
+        isProjectTask: !!t.projectId,
+        taskId: t.taskId,
+        sourceTodoId: t.id,
+        isDaily: t.isDaily,
+        createdByName: t.createdByName,
+        createdById: t.createdById
+      });
+    });
+
+    // 2. From project step tasks assigned to currentUser that were marked complete
+    (projects || []).forEach(p => {
+      (p.steps || []).forEach(s => {
+        const allStepTasks = [...(s.tasks || []), ...(s.subSteps?.flatMap(ss => ss.tasks) || [])];
+        allStepTasks.forEach(t => {
+          const isAssignedToMe = t.assignedTo 
+            ? t.assignedTo === currentUser.id 
+            : (t.role === currentUser.role);
+          const isDone = !!(p.tasksCompleted && p.tasksCompleted[t.id]) || !!t.completed;
+          const taskKey = `${p.id}-${t.id}`;
+          if (isAssignedToMe && isDone && !seenTaskKeys.has(taskKey)) {
+            seenTaskKeys.add(taskKey);
+            items.push({
+              id: `completed-${p.id}-${t.id}`,
+              text: `[${p.jobNumber || p.projectName}] ${t.text}`,
+              completed: true,
+              deadline: t.deadline || s.deadline || p.dueDate,
+              completedAt: t.completedAt,
+              projectName: p.projectName,
+              projectJobNumber: p.jobNumber,
+              projectId: p.id,
+              stepId: s.id,
+              stepTitle: s.title,
+              isProjectTask: true,
+              taskId: t.id
+            });
+          }
+        });
+      });
+    });
+
+    return items;
+  }, [myPersonalTodos, projects, currentUser]);
+
   const dailyDirectivesCount = useMemo(() => {
     return currentUserTasks.filter(t => t.isOverdue || t.priority === 'Critical' || isDueTodayOrOverdue(t.effectiveDeadline)).length;
   }, [currentUserTasks]);
@@ -431,6 +510,8 @@ const Dashboard: React.FC<DashboardProps> = ({
 
     if (directiveFilter === 'DAILY') {
       list = list.filter(t => t.isOverdue || t.priority === 'Critical' || isDueTodayOrOverdue(t.effectiveDeadline));
+    } else if (directiveFilter === 'COMPLETED') {
+      return [];
     } else if (directiveFilter === 'TRACKING') {
       list = list.filter(t => activeTimerTask?.taskId === t.id && (!activeTimerTask?.projectId || activeTimerTask?.projectId === t.projectId));
     } else if (directiveFilter === 'CRITICAL') {
@@ -601,6 +682,54 @@ const Dashboard: React.FC<DashboardProps> = ({
       progress,
       lastUpdated: new Date()
     });
+  };
+
+  const handleReopenTask = (item: {
+    id: string;
+    sourceTodoId?: string;
+    projectId?: string;
+    stepId?: number;
+    taskId?: string;
+    isProjectTask?: boolean;
+  }) => {
+    // 1. If it's linked to a personal or assigned todo, toggle it back
+    if (item.sourceTodoId && onToggleTodo) {
+      onToggleTodo(item.sourceTodoId);
+    }
+    // 2. If it's a project step task, reopen it in the project
+    if (item.isProjectTask && item.projectId && item.taskId && onUpdateProject) {
+      const proj = projects.find(p => p.id === item.projectId);
+      if (proj) {
+        const updatedTasksCompleted: Record<string, boolean> = { ...(proj.tasksCompleted || {}) };
+        delete updatedTasksCompleted[item.taskId];
+        const allTasksCount = (proj.steps || []).flatMap(s => s.tasks || []).length;
+        const completedTasksCount = Object.keys(updatedTasksCompleted).filter(k => updatedTasksCompleted[k]).length;
+        const progress = allTasksCount > 0 ? Math.round((completedTasksCount / allTasksCount) * 100) : proj.progress;
+
+        const updatedSteps = (proj.steps || []).map(s => {
+          if (item.stepId && s.id !== item.stepId) return s;
+          return {
+            ...s,
+            tasks: (s.tasks || []).map(task => {
+              if (task.id !== item.taskId) return task;
+              return {
+                ...task,
+                completed: false,
+                completedAt: undefined
+              };
+            })
+          };
+        });
+
+        onUpdateProject({
+          ...proj,
+          steps: updatedSteps,
+          tasksCompleted: updatedTasksCompleted,
+          progress,
+          lastUpdated: new Date()
+        });
+      }
+    }
   };
 
   const handleUpdateTaskPriority = (projectId: string, stepId: number, taskId: string, priority: 'Critical' | 'High' | 'Medium' | 'Low') => {
@@ -1426,8 +1555,9 @@ const Dashboard: React.FC<DashboardProps> = ({
                   {/* Filter Pills & Sort Controls */}
                   <div className="p-3 border-b border-neutral-800/80 bg-[#0d0e13] flex flex-wrap items-center justify-between gap-2.5">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {(['DAILY', 'ALL', 'CRITICAL', 'OVERDUE', 'PERSONAL', 'TRACKING', 'POSTPONED'] as const).map(f => {
+                      {(['DAILY', 'COMPLETED', 'ALL', 'CRITICAL', 'OVERDUE', 'PERSONAL', 'TRACKING', 'POSTPONED'] as const).map(f => {
                         const count = f === 'DAILY' ? totalDailyPendingCount
+                          : f === 'COMPLETED' ? allCompletedItems.length
                           : f === 'ALL' ? totalMyPendingCount
                           : f === 'TRACKING' ? currentUserTasks.filter(t => activeTimerTask?.taskId === t.id && (!activeTimerTask?.projectId || activeTimerTask?.projectId === t.projectId)).length
                           : f === 'CRITICAL' ? currentUserTasks.filter(t => t.priority === 'Critical' || t.priority === 'High').length
@@ -1442,13 +1572,22 @@ const Dashboard: React.FC<DashboardProps> = ({
                             onClick={() => setDirectiveFilter(f)}
                             className={`px-2.5 py-1 rounded-xs font-mono text-[10px] uppercase font-bold tracking-wider transition-all cursor-pointer flex items-center gap-1.5 border ${
                               directiveFilter === f
-                                ? 'bg-white text-black border-white shadow-sm'
+                                ? f === 'COMPLETED'
+                                  ? 'bg-emerald-400 text-black border-emerald-400 shadow-sm font-black'
+                                  : 'bg-white text-black border-white shadow-sm'
                                 : 'bg-[#12141a] text-neutral-400 border-neutral-800 hover:border-neutral-700 hover:text-neutral-200'
                             }`}
                           >
                             {f === 'DAILY' && <Clock size={11} className={directiveFilter === 'DAILY' ? 'text-black' : 'text-amber-400'} />}
+                            {f === 'COMPLETED' && <CheckCircle2 size={11} className={directiveFilter === 'COMPLETED' ? 'text-black' : 'text-emerald-400'} />}
                             <span>{f}</span>
-                            <span className={`px-1 py-0.2 rounded-xs text-[9px] ${directiveFilter === f ? 'bg-black text-white' : 'bg-neutral-800 text-neutral-400'}`}>
+                            <span className={`px-1 py-0.2 rounded-xs text-[9px] ${
+                              directiveFilter === f 
+                                ? 'bg-black text-white font-bold' 
+                                : f === 'COMPLETED' 
+                                  ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-500/30'
+                                  : 'bg-neutral-800 text-neutral-400'
+                            }`}>
                               {count}
                             </span>
                           </button>
@@ -1477,6 +1616,130 @@ const Dashboard: React.FC<DashboardProps> = ({
 
                   {/* Directives & To-Dos List */}
                   <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                    {/* Dedicated Completed Tasks Tab View */}
+                    {directiveFilter === 'COMPLETED' && (
+                      <div className="space-y-2 mb-3">
+                        <div className="font-mono text-[10px] text-neutral-400 uppercase tracking-widest flex items-center justify-between px-1 mb-2">
+                          <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
+                            <CheckCircle2 size={13} className="text-emerald-400" />
+                            <span>COMPLETED DELIVERABLES & FINISHED DIRECTIVES ({allCompletedItems.length})</span>
+                          </span>
+                          <span className="text-neutral-500 text-[9px]">Click checkbox or reopen to restore task</span>
+                        </div>
+
+                        {allCompletedItems.length === 0 ? (
+                          <div className="text-center py-20 opacity-50 font-mono text-xs uppercase flex flex-col items-center justify-center gap-2">
+                            <CheckCircle2 size={32} className="text-emerald-500/50" />
+                            <span>NO COMPLETED TASKS YET // FINISH DIRECTIVES TO ARCHIVE HERE</span>
+                          </div>
+                        ) : (
+                          allCompletedItems.map((item, idx) => {
+                            const projectObj = item.projectId ? projects.find(p => p.id === item.projectId) : undefined;
+                            return (
+                              <div
+                                key={item.id || idx}
+                                className="p-3.5 rounded-sm border bg-[#0b100d]/70 border-emerald-950/80 hover:border-emerald-700/50 transition-all flex flex-col gap-2 shadow-sm"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex items-start gap-3 min-w-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleReopenTask(item)}
+                                      className="w-5 h-5 mt-0.5 rounded-xs border border-emerald-500 bg-emerald-500 text-black flex items-center justify-center transition-all cursor-pointer shrink-0 hover:bg-emerald-400 hover:border-emerald-400"
+                                      title="Click to uncheck and reopen task"
+                                    >
+                                      <Check size={13} strokeWidth={3} />
+                                    </button>
+                                    <div className="min-w-0">
+                                      {(item.projectJobNumber || item.projectName) && (
+                                        <div className="flex flex-wrap items-center gap-1.5 mb-1 font-mono text-[9px]">
+                                          {item.projectJobNumber && (
+                                            <button
+                                              type="button"
+                                              onClick={() => projectObj && onSelectProject && onSelectProject(projectObj)}
+                                              className="px-1.5 py-0.2 bg-[#121d17] border border-emerald-800/60 text-emerald-300 font-bold uppercase rounded-xs hover:border-emerald-500 cursor-pointer flex items-center gap-1"
+                                              title={projectObj ? `Jump to project ${projectObj.projectName}` : undefined}
+                                            >
+                                              <span>{item.projectJobNumber}</span>
+                                              {projectObj && <ExternalLink size={8} />}
+                                            </button>
+                                          )}
+                                          {item.projectName && (
+                                            <span className="text-neutral-400 uppercase truncate font-semibold">
+                                              {item.projectName}
+                                            </span>
+                                          )}
+                                          {item.stepTitle && (
+                                            <span className="text-neutral-500 uppercase text-[8px]">
+                                              • {item.stepTitle}
+                                            </span>
+                                          )}
+                                          <span className="text-emerald-400 font-bold text-[8px] uppercase tracking-wider">
+                                            • COMPLETED
+                                          </span>
+                                        </div>
+                                      )}
+                                      <span className="text-xs font-mono font-medium block truncate line-through text-neutral-400">
+                                        {item.text.startsWith('[') && (item.projectJobNumber || item.projectName)
+                                          ? item.text.replace(/^\[.*?\]\s*/, '')
+                                          : item.text}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0 font-mono text-[9px]">
+                                    <span className="px-2 py-0.5 rounded-xs bg-emerald-950/70 border border-emerald-500/40 text-emerald-300 uppercase tracking-wider font-bold flex items-center gap-1">
+                                      <CheckCircle2 size={10} /> Finished
+                                    </span>
+
+                                    {item.completedAt ? (
+                                      <span className="px-2 py-0.5 rounded-xs bg-black/60 border border-neutral-800 text-neutral-400 uppercase tracking-wider">
+                                        {new Date(item.completedAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                      </span>
+                                    ) : item.deadline ? (
+                                      <span className="px-2 py-0.5 rounded-xs bg-black/60 border border-neutral-800 text-neutral-400 uppercase tracking-wider">
+                                        Due {new Date(item.deadline).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                                      </span>
+                                    ) : null}
+
+                                    {/* Reopen Action Button */}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleReopenTask(item)}
+                                      className="px-2 py-0.5 rounded-xs bg-[#12141a] hover:bg-neutral-800 border border-neutral-700 hover:border-white text-neutral-300 hover:text-white uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
+                                      title="Restore to active to-do list"
+                                    >
+                                      <RotateCcw size={10} />
+                                      <span>Reopen</span>
+                                    </button>
+
+                                    {/* Delete option if personal todo */}
+                                    {item.sourceTodoId && onDeleteTodo && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onDeleteTodo(item.sourceTodoId!)}
+                                        className="p-1 text-neutral-500 hover:text-rose-400 transition-colors cursor-pointer rounded-xs"
+                                        title="Delete completed task"
+                                      >
+                                        <Trash2 size={11} />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Assigned / Created Details */}
+                                {item.createdByName && item.createdById !== currentUser.id && (
+                                  <div className="pl-8 font-mono text-[9px] text-neutral-500">
+                                    Assigned by: <strong className="text-neutral-300">{item.createdByName}</strong>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+
                     {/* Action Items Section (when in DAILY, ALL, or PERSONAL filter) */}
                     {(directiveFilter === 'DAILY' || directiveFilter === 'ALL' || directiveFilter === 'PERSONAL') && (
                       (() => {
@@ -1516,9 +1779,26 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     >
                                       <Check size={12} strokeWidth={3} className={pt.completed ? 'opacity-100' : 'opacity-0'} />
                                     </button>
-                                    <span className={`text-xs font-mono font-medium ${pt.completed ? 'line-through text-neutral-500' : 'text-neutral-200'}`}>
-                                      {pt.text}
-                                    </span>
+                                    <div className="min-w-0">
+                                      {(pt.projectJobNumber || pt.projectName) && (
+                                        <div className="flex items-center gap-1.5 mb-1 font-mono text-[9px]">
+                                          {pt.projectJobNumber && (
+                                            <span className="px-1.5 py-0.2 bg-[#181a24] border border-neutral-700 text-amber-300 font-bold uppercase rounded-xs">
+                                              {pt.projectJobNumber}
+                                            </span>
+                                          )}
+                                          {pt.projectName && (
+                                            <span className="text-neutral-400 uppercase truncate font-semibold">
+                                              {pt.projectName}
+                                            </span>
+                                          )}
+                                          <span className="text-emerald-400/90 text-[8px] uppercase tracking-wider font-bold">• ASSIGNED</span>
+                                        </div>
+                                      )}
+                                      <span className={`text-xs font-mono font-medium block truncate ${pt.completed ? 'line-through text-neutral-500' : 'text-neutral-200'}`}>
+                                        {pt.text.startsWith('[') && (pt.projectJobNumber || pt.projectName) ? pt.text.replace(/^\[.*?\]\s*/, '') : pt.text}
+                                      </span>
+                                    </div>
                                   </div>
                                   <div className="flex items-center gap-1.5 shrink-0">
                                     {pt.deadline ? (
@@ -1566,14 +1846,19 @@ const Dashboard: React.FC<DashboardProps> = ({
                                       )
                                     )}
 
-                                    {pt.isDaily && (
+                                    {pt.projectId ? (
+                                      <span className="px-2 py-0.5 rounded-xs bg-cyan-950/70 border border-cyan-500/40 font-mono text-[9px] text-cyan-300 uppercase tracking-wider font-bold">
+                                        Assigned
+                                      </span>
+                                    ) : pt.isDaily ? (
                                       <span className="px-2 py-0.5 rounded-xs bg-amber-950/60 border border-amber-500/40 font-mono text-[9px] text-amber-300 uppercase tracking-wider font-bold">
                                         Daily
                                       </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded-xs bg-black/60 border border-neutral-800 font-mono text-[9px] text-neutral-400 uppercase tracking-wider">
+                                        Task
+                                      </span>
                                     )}
-                                    <span className="px-2 py-0.5 rounded-xs bg-black/60 border border-neutral-800 font-mono text-[9px] text-neutral-400 uppercase tracking-wider">
-                                      Task
-                                    </span>
 
                                     {onDeleteTodo && (
                                       <button
@@ -1611,7 +1896,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                       })()
                     )}
 
-                    {filteredAndSortedDirectives.length === 0 && ((directiveFilter !== 'DAILY' && directiveFilter !== 'ALL' && directiveFilter !== 'PERSONAL') ? true : (directiveFilter === 'DAILY' ? dailyPersonalTodos.length === 0 : myPersonalTodos.length === 0)) ? (
+                    {directiveFilter === 'COMPLETED' ? null : filteredAndSortedDirectives.length === 0 && ((directiveFilter !== 'DAILY' && directiveFilter !== 'ALL' && directiveFilter !== 'PERSONAL') ? true : (directiveFilter === 'DAILY' ? dailyPersonalTodos.length === 0 : myPersonalTodos.length === 0)) ? (
                       <div className="text-center py-20 opacity-40 font-mono text-xs uppercase flex flex-col items-center justify-center gap-2">
                         <CheckCircle2 size={32} className="text-emerald-400" />
                         <span>ALL {directiveFilter === 'DAILY' ? 'DAILY ' : ''}TO-DO ITEMS COMPLETED // SYSTEM NOMINAL</span>

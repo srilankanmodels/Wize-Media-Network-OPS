@@ -419,12 +419,18 @@ const TaskItem: React.FC<{
             <button 
               type="button"
               onClick={() => setShowAssignMenu(!showAssignMenu)}
-              className="flex items-center gap-2 px-2.5 py-1 bg-[#0c0d12] border border-neutral-800 rounded-sm text-[10px] text-neutral-300 hover:text-white hover:border-neutral-700 transition-colors cursor-pointer"
+              className={`flex items-center gap-2 px-2.5 py-1 rounded-sm text-[10px] transition-colors cursor-pointer border ${
+                assignedStaff 
+                  ? 'bg-[#0f1418] border-neutral-700 text-white hover:border-neutral-500' 
+                  : 'bg-[#0c0d12] border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700'
+              }`}
+              title={assignedStaff ? `Assigned to ${assignedStaff.name} • Auto-synced to their To-Do list` : "Assign specialist • Automatically updates on assignee's To-Do list"}
             >
               {assignedStaff ? (
                 <div className="flex items-center gap-1.5">
                   <img src={assignedStaff.avatarUrl} className="w-4 h-4 rounded-full object-cover" alt="" />
-                  <span className="uppercase text-[9px]">{assignedStaff.name.split(' ')[0]}</span>
+                  <span className="uppercase text-[9px] font-bold">{assignedStaff.name.split(' ')[0]}</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Synchronized on assignee's To-Do list"></span>
                 </div>
               ) : (
                 <span className="text-neutral-500 uppercase text-[9px]">Assign</span>
@@ -437,28 +443,39 @@ const TaskItem: React.FC<{
                 className="absolute right-0 top-full mt-2 w-64 bg-[#0e1017] border border-neutral-700 rounded-sm shadow-[0_20px_40px_rgba(0,0,0,0.9),0_0_20px_rgba(0,0,0,0.8)] z-[100] p-2 space-y-1 font-mono text-xs animate-in fade-in zoom-in-95 duration-100" 
                 onClick={e => e.stopPropagation()}
               >
-                <div className="text-[9px] uppercase tracking-widest text-neutral-400 px-2 py-1 font-bold border-b border-neutral-800/80 pb-1.5">
-                  Assign Specialist
+                <div className="flex items-center justify-between px-2 py-1 border-b border-neutral-800/80 pb-1.5">
+                  <span className="text-[9px] uppercase tracking-widest text-neutral-400 font-bold">Assign Specialist</span>
+                  <span className="text-[8px] font-mono text-emerald-400 flex items-center gap-1 uppercase tracking-wider font-semibold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Syncs To-Do
+                  </span>
                 </div>
                 <div className="max-h-56 overflow-y-auto custom-scrollbar space-y-1 pt-1">
                   {staffList.map(s => (
                     <button
                       key={s.id}
                       onClick={() => { onAssign(s.id); setShowAssignMenu(false); }}
-                      className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-sm text-left transition-colors cursor-pointer ${
+                      className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm text-left transition-colors cursor-pointer ${
                         task.assignedTo === s.id ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-[#181a24] hover:text-white'
                       }`}
                     >
-                      <img src={s.avatarUrl} className="w-5 h-5 rounded-full object-cover" alt="" />
-                      <div className="truncate min-w-0">
-                        <div className="text-[10px] font-bold text-white uppercase truncate">{s.name}</div>
-                        <div className="text-[8px] text-neutral-500 uppercase truncate">{s.role}</div>
+                      <div className="flex items-center gap-2.5 truncate min-w-0">
+                        <img src={s.avatarUrl} className="w-5 h-5 rounded-full object-cover shrink-0" alt="" />
+                        <div className="truncate min-w-0">
+                          <div className="text-[10px] font-bold text-white uppercase truncate">{s.name}</div>
+                          <div className="text-[8px] text-neutral-500 uppercase truncate">{s.role}</div>
+                        </div>
                       </div>
+                      {task.assignedTo === s.id && (
+                        <span className="px-1.5 py-0.2 rounded-xs bg-emerald-950/90 border border-emerald-500/50 text-emerald-300 text-[8px] font-bold uppercase shrink-0">
+                          In To-Do
+                        </span>
+                      )}
                     </button>
                   ))}
                   {task.assignedTo && (
-                    <button onClick={() => { onAssign(''); setShowAssignMenu(false); }} className="w-full text-left px-2 py-1.5 text-[9px] text-rose-400 hover:bg-rose-950/20 uppercase cursor-pointer">
-                      Remove Assignee
+                    <button onClick={() => { onAssign(''); setShowAssignMenu(false); }} className="w-full text-left px-2 py-1.5 text-[9px] text-rose-400 hover:bg-rose-950/20 uppercase cursor-pointer border-t border-neutral-800/80 mt-1 pt-1.5">
+                      Remove Assignee (Clear from To-Do)
                     </button>
                   )}
                 </div>
