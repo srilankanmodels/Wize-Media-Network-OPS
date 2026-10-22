@@ -22,9 +22,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [showGooglePicker, setShowGooglePicker] = useState(false);
-  const [customGoogleEmail, setCustomGoogleEmail] = useState('');
-  const [customGoogleName, setCustomGoogleName] = useState('');
 
   // Handle successful Google User Authentication
   const handleSuccessfulGoogleUser = async (gUser: {
@@ -308,7 +305,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
     setGoogleLoading(true);
 
     try {
-      // 1. Primary: Connect via Supabase Google OAuth (configured directly in database)
+      // 1. Primary: Direct Supabase Google OAuth (redirects directly to accounts.google.com)
       if (isSupabaseEnabled && supabase) {
         const { data, error: authError } = await supabase.auth.signInWithOAuth({
           provider: 'google',
@@ -324,19 +321,26 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
           console.warn('Supabase OAuth notice:', authError);
           // Fall back to Firebase popup if Supabase returns error
           if (isFirebaseEnabled && auth) {
-            const { user } = await signInWithGoogle();
-            if (user && user.email) {
-              await handleSuccessfulGoogleUser({
-                uid: user.uid,
-                email: user.email,
-                displayName: user.displayName,
-                photoURL: user.photoURL
-              });
-              setGoogleLoading(false);
-              return;
+            try {
+              const { user } = await signInWithGoogle();
+              if (user && user.email) {
+                await handleSuccessfulGoogleUser({
+                  uid: user.uid,
+                  email: user.email,
+                  displayName: user.displayName,
+                  photoURL: user.photoURL
+                });
+                setGoogleLoading(false);
+                return;
+              }
+            } catch (fbErr: any) {
+              if (fbErr.code !== 'auth/popup-closed-by-user' && fbErr.code !== 'auth/cancelled-popup-request') {
+                setError(fbErr.message?.toUpperCase() || 'GOOGLE AUTHENTICATION FAILED');
+              }
             }
+          } else {
+            setError(authError.message.toUpperCase());
           }
-          setShowGooglePicker(true);
         } else if (data?.url) {
           window.location.assign(data.url);
           return;
@@ -359,19 +363,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
             return;
           }
         } catch (firebaseErr: any) {
-          console.warn('Firebase Google Auth encounter:', firebaseErr);
-          if (firebaseErr.code === 'auth/popup-closed-by-user' || firebaseErr.code === 'auth/cancelled-popup-request') {
-            setGoogleLoading(false);
-            return;
+          if (firebaseErr.code !== 'auth/popup-closed-by-user' && firebaseErr.code !== 'auth/cancelled-popup-request') {
+            setError(firebaseErr.message?.toUpperCase() || 'GOOGLE AUTHENTICATION FAILED');
           }
         }
       }
-
-      // 3. Fallback to Google Account Selector
-      setShowGooglePicker(true);
     } catch (err: any) {
       console.error('Google auth error:', err);
-      setShowGooglePicker(true);
+      setError(err.message?.toUpperCase() || 'AUTHENTICATION PROTOCOL ERROR');
     } finally {
       setGoogleLoading(false);
     }
@@ -470,18 +469,11 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
                 </>
               )}
             </button>
-            <div className="flex justify-between items-center mt-2 px-1">
+            <div className="flex justify-center items-center mt-2 px-1">
               <span className="font-mono text-[9px] text-neutral-500 uppercase tracking-widest flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 Official Supabase SSO Connected
               </span>
-              <button
-                type="button"
-                onClick={() => setShowGooglePicker(true)}
-                className="font-mono text-[9px] text-neutral-400 hover:text-white uppercase tracking-wider underline transition-colors cursor-pointer"
-              >
-                Choose Account
-              </button>
             </div>
           </div>
 
@@ -570,130 +562,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
         </div>
       </div>
 
-      {/* Google Account Selector Modal (Direct Google Identity Selector) */}
-      {showGooglePicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#0e0f14] border border-neutral-700 rounded-sm shadow-2xl w-full max-w-md overflow-hidden">
-            {/* Modal Header */}
-            <div className="p-6 border-b border-neutral-800 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <svg className="w-6 h-6 shrink-0" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                  />
-                </svg>
-                <div>
-                  <h3 className="font-heading font-black text-white text-sm uppercase tracking-wider">Google Sign-In</h3>
-                  <p className="font-mono text-[10px] text-neutral-400">Select a Google Workspace identity to sign in</p>
-                </div>
-              </div>
-              <button 
-                type="button" 
-                onClick={() => setShowGooglePicker(false)}
-                className="text-neutral-500 hover:text-white transition-colors p-1 cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
 
-            {/* Modal Body */}
-            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto font-mono">
-              <div className="text-[10px] uppercase text-neutral-400 tracking-wider mb-2">
-                Recognized Workspace Identities
-              </div>
-
-              <div className="space-y-2">
-                {[
-                  { name: 'Master Super Admin', email: 'superadmin@agency.com', role: 'Super Admin', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80' },
-                  { name: 'Emily HR', email: 'emily@agency.com', role: 'HR', avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=80' },
-                  { name: 'Sarah Admin', email: 'sarah@agency.com', role: 'Admin', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80' },
-                  { name: 'Alex Creative Lead', email: 'alex@agency.com', role: 'Management', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80' },
-                  { name: 'Tom Designer', email: 'tom@agency.com', role: 'Designer', avatar: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=150&q=80' },
-                  { name: 'Finance Manager', email: 'finance@agency.com', role: 'Accounts', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80' }
-                ].map((account) => (
-                  <button
-                    key={account.email}
-                    type="button"
-                    onClick={() => {
-                      setShowGooglePicker(false);
-                      handleSuccessfulGoogleUser({
-                        uid: `google_${account.email.replace(/[@.]/g, '_')}`,
-                        email: account.email,
-                        displayName: account.name,
-                        photoURL: account.avatar
-                      });
-                    }}
-                    className="w-full flex items-center gap-3 p-2.5 bg-[#12141a] hover:bg-[#1a1c24] border border-neutral-800 hover:border-neutral-600 rounded-sm text-left transition-colors group cursor-pointer"
-                  >
-                    <img src={account.avatar} alt={account.name} className="w-8 h-8 rounded-full object-cover border border-neutral-700" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs text-white font-bold truncate group-hover:text-blue-400 transition-colors">{account.name}</div>
-                      <div className="text-[10px] text-neutral-400 truncate">{account.email}</div>
-                    </div>
-                    <span className="text-[9px] uppercase px-1.5 py-0.5 bg-neutral-800 border border-neutral-700 text-neutral-300 rounded-xs">
-                      {account.role}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Or Custom Google Email */}
-              <div className="pt-4 border-t border-neutral-800">
-                <div className="text-[10px] uppercase text-neutral-400 tracking-wider mb-2">
-                  Use Another Google Workspace Account
-                </div>
-                <div className="space-y-2">
-                  <input
-                    type="email"
-                    value={customGoogleEmail}
-                    onChange={(e) => setCustomGoogleEmail(e.target.value)}
-                    placeholder="name@mediawize.lk or user@gmail.com"
-                    className="w-full px-3 py-2 bg-[#12141a] border border-neutral-800 focus:border-white font-mono text-xs text-white rounded-sm outline-none placeholder:text-neutral-600"
-                  />
-                  <input
-                    type="text"
-                    value={customGoogleName}
-                    onChange={(e) => setCustomGoogleName(e.target.value)}
-                    placeholder="Full Name (optional)"
-                    className="w-full px-3 py-2 bg-[#12141a] border border-neutral-800 focus:border-white font-mono text-xs text-white rounded-sm outline-none placeholder:text-neutral-600"
-                  />
-                  <button
-                    type="button"
-                    disabled={!customGoogleEmail.trim()}
-                    onClick={() => {
-                      if (!customGoogleEmail.trim()) return;
-                      setShowGooglePicker(false);
-                      const emailVal = customGoogleEmail.trim().toLowerCase();
-                      handleSuccessfulGoogleUser({
-                        uid: `google_${Date.now()}`,
-                        email: emailVal,
-                        displayName: customGoogleName.trim() || emailVal.split('@')[0],
-                        photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'
-                      });
-                    }}
-                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-mono text-xs uppercase tracking-wider font-bold rounded-sm transition-colors disabled:opacity-50 cursor-pointer"
-                  >
-                    Authenticate with Google Identity
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <p className="mt-8 font-mono text-neutral-500 text-[10px] uppercase tracking-widest">
         [ 6.9271° N, 79.8612° E ] NODE: COLOMBO 07 // MEDIAWIZE OS
