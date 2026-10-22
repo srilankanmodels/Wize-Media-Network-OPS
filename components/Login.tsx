@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { StaffMember, Role, AccountStatus } from '../types';
 import { Lock, Mail, ArrowRight, ShieldCheck, Hexagon, Loader2, Sparkles, X, User } from 'lucide-react';
 import { supabase, isSupabaseEnabled, recordAuditLog, createOrGetAccessRequest, saveOrUpdateUserProfile } from '../supabase';
-import { auth, isFirebaseEnabled, signInWithGoogle } from '../firebase';
 import { INITIAL_STAFF } from '../data';
 
 interface LoginProps {
@@ -131,9 +130,9 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
     // Detect errors from Google OAuth redirect in URL hash or query params
     const params = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.replace('#', '?'));
-    const errorDesc = params.get('error_description') || hashParams.get('error_description');
-    if (errorDesc) {
-      setError(decodeURIComponent(errorDesc.replace(/\+/g, ' ')).toUpperCase());
+    const errorMsg = params.get('error_description') || hashParams.get('error_description') || params.get('error') || hashParams.get('error');
+    if (errorMsg) {
+      setError(decodeURIComponent(errorMsg.replace(/\+/g, ' ')).toUpperCase());
       // Security: Strip error parameters from browser address bar immediately
       window.history.replaceState({}, document.title, window.location.pathname);
     }
@@ -305,68 +304,32 @@ const Login: React.FC<LoginProps> = ({ onLogin, staffList }) => {
     setGoogleLoading(true);
 
     try {
-      // 1. Primary: Direct Supabase Google OAuth (redirects directly to accounts.google.com)
-      if (isSupabaseEnabled && supabase) {
-        const { data, error: authError } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo: window.location.origin,
-            queryParams: {
-              access_type: 'offline',
-              prompt: 'select_account'
-            }
-          }
-        });
-        if (authError) {
-          console.warn('Supabase OAuth notice:', authError);
-          // Fall back to Firebase popup if Supabase returns error
-          if (isFirebaseEnabled && auth) {
-            try {
-              const { user } = await signInWithGoogle();
-              if (user && user.email) {
-                await handleSuccessfulGoogleUser({
-                  uid: user.uid,
-                  email: user.email,
-                  displayName: user.displayName,
-                  photoURL: user.photoURL
-                });
-                setGoogleLoading(false);
-                return;
-              }
-            } catch (fbErr: any) {
-              if (fbErr.code !== 'auth/popup-closed-by-user' && fbErr.code !== 'auth/cancelled-popup-request') {
-                setError(fbErr.message?.toUpperCase() || 'GOOGLE AUTHENTICATION FAILED');
-              }
-            }
-          } else {
-            setError(authError.message.toUpperCase());
-          }
-        } else if (data?.url) {
-          window.location.assign(data.url);
-          return;
-        }
+      if (!isSupabaseEnabled || !supabase) {
+        setError('SUPABASE CLOUD DATABASE CONNECTION NOT AVAILABLE');
         return;
       }
 
-      // 2. Secondary fallback: Firebase Google Popup
-      if (isFirebaseEnabled && auth) {
-        try {
-          const { user } = await signInWithGoogle();
-          if (user && user.email) {
-            await handleSuccessfulGoogleUser({
-              uid: user.uid,
-              email: user.email,
-              displayName: user.displayName,
-              photoURL: user.photoURL
-            });
-            setGoogleLoading(false);
-            return;
-          }
-        } catch (firebaseErr: any) {
-          if (firebaseErr.code !== 'auth/popup-closed-by-user' && firebaseErr.code !== 'auth/cancelled-popup-request') {
-            setError(firebaseErr.message?.toUpperCase() || 'GOOGLE AUTHENTICATION FAILED');
+      // 100% Pure Supabase Google OAuth SSO (Redirects directly to Google Identity)
+      const { data, error: authError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'select_account'
           }
         }
+      });
+
+      if (authError) {
+        console.error('Supabase Google OAuth error:', authError);
+        setError(`GOOGLE SIGN-IN ERROR: ${authError.message.toUpperCase()}`);
+        return;
+      }
+
+      if (data?.url) {
+        window.location.assign(data.url);
+        return;
       }
     } catch (err: any) {
       console.error('Google auth error:', err);
